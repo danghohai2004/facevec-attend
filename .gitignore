@@ -1,0 +1,28 @@
+# ==== Environment ====
+.env
+.venv/
+venv/
+
+# ==== Python cache ====
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ==== Logs ====
+*.log
+
+# ==== IDE files ====
+.idea/
+*.iml
+
+# ==== OS files ====
+.DS_Store
+Thumbs.db
+
+# ==== Image data (ignored except placeholder) ====
+img_myface/*
+!img_myface/.gitkeep
+
+# ==== Compiled Python files ====
+*.pyo
+*.pyd
