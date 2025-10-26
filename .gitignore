@@ -20,8 +20,8 @@ __pycache__/
 Thumbs.db
 
 # ==== Image data (ignored except placeholder) ====
-data/user_images/*
-!data/user_images/.gitkeep
+user_images/*
+!user_images/.gitkeep
 
 # ==== Compiled Python files ====
 *.pyo

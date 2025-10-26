@@ -7,7 +7,7 @@ MODEL = {
 }
 
 # ==== PATH IMAGE FACE ====
-ORIGINAL_IMG_PATH = "data/user_images"
+ORIGINAL_IMG_PATH = "user_images"
 
 # ==== THRESHOLD ====
 THRESHOLD = 0.6
