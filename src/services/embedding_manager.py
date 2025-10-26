@@ -1,9 +1,6 @@
-from source.core.extract_emb import extract_embeddings
-from utils.conn_db import get_connection
-import streamlit as st
+from src.core.extract_emb import extract_embeddings
 
-def add_info_embeddings(original_img_path, name):
-    conn = get_connection()
+def add_info_embeddings(conn, original_img_path, name):
     embeddings = extract_embeddings(original_img_path, name)
 
     try:
@@ -24,19 +21,19 @@ def add_info_embeddings(original_img_path, name):
             conn.commit()
         cur.close()
 
+        return f"Successfully added the embedding {name} to the database", None
+
     except Exception as e:
         conn.rollback()
-        return e
+        return None, f"[ERROR ADD]: {e}"
 
-def remove_embeddings(emp_id):
-    conn = get_connection()
+def remove_embeddings(conn, emp_id):
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT emp_id FROM employees WHERE emp_id = %s", (emp_id,))
             row = cur.fetchone()
             if row is None:
-                st.warning(f"Employee {emp_id} doesn't exist")
-                return
+                return None
 
             cur.execute("DELETE FROM face_embeddings WHERE emp_id = %s", (emp_id,))
             cur.execute("DELETE FROM employees WHERE emp_id = %s", (emp_id,))
@@ -44,9 +41,4 @@ def remove_embeddings(emp_id):
 
     except Exception as e:
         conn.rollback()
-        st.error(f"ERROR DELETING: {e}")
-    finally:
-        conn.close()
-
-
-
+        return f"[WARNING]: {e}"

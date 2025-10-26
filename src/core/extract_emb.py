@@ -2,7 +2,6 @@ import os
 import cv2
 from utils.model_app import setup_face_app
 
-# Extract facial features into dictionary
 def extract_embeddings(original_img_path, name):
     app = setup_face_app()
     db_embeddings = {}

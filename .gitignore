@@ -1,5 +1,5 @@
 # ==== Environment ====
-.env
+../.env
 .venv/
 venv/
 
@@ -20,8 +20,8 @@ __pycache__/
 Thumbs.db
 
 # ==== Image data (ignored except placeholder) ====
-img_myface/*
-!img_myface/.gitkeep
+data/user_images/*
+!data/user_images/.gitkeep
 
 # ==== Compiled Python files ====
 *.pyo
