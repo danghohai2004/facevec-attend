@@ -12,6 +12,9 @@ ORIGINAL_IMG_PATH = "user_images"
 # ==== THRESHOLD ====
 THRESHOLD = 0.6
 
+# ==== DB STYLE (neon_tech/local) ====
+DB_STYLE = "neon_tech"
+
 
 
 

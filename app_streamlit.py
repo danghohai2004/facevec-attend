@@ -8,9 +8,9 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, time as tm
 from time import time
-from utils.conn_db import get_connection
+from conn_db import get_connection
 from utils.model_app import setup_face_app
-from local_inference import draw_bbox
+from inference.local_inference import draw_bbox
 from src.core.face_identifier import identify_person_pgvector
 from src.services.attendance_manager import get_current_time
 from src.services.embedding_manager import add_info_embeddings, remove_embeddings

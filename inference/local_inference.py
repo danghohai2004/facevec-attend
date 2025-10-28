@@ -3,7 +3,7 @@ import logging
 logging.getLogger("streamlit.runtime.scriptrunner.script_runner").setLevel(logging.ERROR)
 from src.core.face_identifier import identify_person_pgvector
 from src.core.extract_emb import setup_face_app
-from utils.conn_db import get_connection
+from conn_db import get_connection
 
 def draw_bbox(frame, bbox, color=(0,255,255), thickness=2, corner_len=10):
     x1, y1, x2, y2 = bbox
