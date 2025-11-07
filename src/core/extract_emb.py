@@ -1,6 +1,7 @@
 import os
 import cv2
 from utils.model_app import setup_face_app
+import streamlit as st
 
 def extract_embeddings(original_img_path, name):
     app = setup_face_app()
@@ -17,6 +18,9 @@ def extract_embeddings(original_img_path, name):
                 img = cv2.imread(img_path)
 
                 faces = app.get(img)
+
+                if faces is None or len(faces) == 0:
+                    continue
 
                 embeddings.append(faces[0].normed_embedding)
 

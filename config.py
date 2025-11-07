@@ -7,14 +7,10 @@ MODEL = {
 }
 
 # ==== PATH IMAGE FACE ====
-ORIGINAL_IMG_PATH = "user_images"
+ORIGINAL_IMG_PATH = "img_user"
 
 # ==== THRESHOLD ====
 THRESHOLD = 0.6
-
-# ==== DB STYLE (neon_tech/local) ====
-DB_STYLE = "neon_tech"
-
 
 
 

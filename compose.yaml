@@ -1,0 +1,38 @@
+version: "3.8"
+
+# All configurations are located in the .env file; you can modify the settings there
+services:
+  db:
+    image: ankane/pgvector
+    container_name: ${CONTAINER_NAME_DB}
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_NAME: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+
+  streamlit:
+    build: .
+    container_name: ${CONTAINER_NAME_APP}
+    depends_on:
+      - db
+    ports:
+      - "8501:8501"
+    environment:
+      DB_HOST: db
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+    devices:
+      - "${CAMERA_DEV}:${CAMERA_DEV}"
+    privileged: true
+    command: >
+      bash -c "streamlit run app_streamlit.py --server.address=0.0.0.0 --server.port=8501"
+
+volumes:
+  pgdata:

@@ -1,8 +1,8 @@
 from src.core.extract_emb import extract_embeddings
+import streamlit as st
 
 def add_info_embeddings(conn, original_img_path, name):
     embeddings = extract_embeddings(original_img_path, name)
-
     try:
         with conn.cursor() as cur:
 
