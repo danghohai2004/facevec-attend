@@ -12,7 +12,7 @@ from datetime import datetime, time as tm
 from time import time
 from utils.conn_db import get_connection
 from utils.model_app import setup_face_app
-from inference.local_inference import draw_bbox
+from utils.draw_bbox import draw_bbox
 from src.core.face_identifier import identify_person_pgvector
 from src.services.attendance_manager import get_current_time
 from src.services.embedding_manager import add_info_embeddings, remove_embeddings
@@ -235,7 +235,7 @@ def streamlit_app(threshold, base_path):
 
                                     while cap_video.isOpened():
                                         ret, frame = cap_video.read()
-                                        if not ret:
+                                        if not ret or stop_attendance_video:
                                             break
 
                                         within_shift, now, check_type = get_current_time(st.session_state.shifts_time)
