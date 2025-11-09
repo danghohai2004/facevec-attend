@@ -20,9 +20,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# ==== Image data (ignored except placeholder) ====
-faces/*
-
 # ==== local inferen ====
 inference/*
 
