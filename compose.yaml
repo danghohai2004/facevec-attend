@@ -26,6 +26,8 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
+    volumes:
+      - ${FACES_HOST_DIR}:/app/faces
     devices:
       - "${CAMERA_DEV}:${CAMERA_DEV}"
     privileged: true
