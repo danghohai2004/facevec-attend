@@ -24,6 +24,9 @@ Thumbs.db
 img_user/*
 !img_user/.gitkeep
 
+# ==== local inferen ====
+inference/*
+
 # ==== Compiled Python files ====
 *.pyo
 *.pyd
