@@ -21,8 +21,7 @@ __pycache__/
 Thumbs.db
 
 # ==== Image data (ignored except placeholder) ====
-img_user/*
-!img_user/.gitkeep
+faces/*
 
 # ==== local inferen ====
 inference/*
