@@ -16,7 +16,7 @@ from utils.draw_bbox import draw_bbox
 from src.core.face_identifier import identify_person_pgvector
 from src.services.attendance_manager import get_current_time
 from src.services.embedding_manager import add_info_embeddings, remove_embeddings
-from config import ORIGINAL_IMG_PATH, THRESHOLD
+from config import ORIGINAL_IMG_PATH, THRESHOLD, APPROX_EMB_FACE
 
 
 @st.cache_resource
@@ -39,7 +39,7 @@ def get_monthly_report(conn, selected_year, selected_month):
     df = pd.read_sql_query(query, conn, params=(selected_year, selected_month))
     return df
 
-def streamlit_app(threshold, base_path):
+def streamlit_app(threshold, tota_emb_face, base_path):
     st.set_page_config(page_title="Face Attendance", layout="wide")
     st.image("template/face_icon.png", width=80)
     st.title("Face Attendance System")
@@ -336,9 +336,9 @@ def streamlit_app(threshold, base_path):
                                     st.session_state.last_capture_time = time()
 
                                     count = len(st.session_state.capture_faces)
-                                    process_bar.progress(count / 31)
+                                    process_bar.progress(count / tota_emb_face)
 
-                                if len(st.session_state.capture_faces) >= 31:
+                                if len(st.session_state.capture_faces) >= tota_emb_face:
                                     st.session_state.capturing = False
 
                             cap.release()
@@ -686,4 +686,4 @@ def streamlit_app(threshold, base_path):
         st.error(f"[ERROR APP]: {e}")
 
 if __name__ == "__main__":
-    streamlit_app(threshold=THRESHOLD, base_path=ORIGINAL_IMG_PATH)
+    streamlit_app(threshold=THRESHOLD, tota_emb_face = APPROX_EMB_FACE, base_path=ORIGINAL_IMG_PATH)
