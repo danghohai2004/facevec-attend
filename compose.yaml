@@ -19,7 +19,7 @@ services:
     depends_on:
       - db
     ports:
-      - "8501:8501"
+      - "${PORT_STREAMLIT}:8501"
     environment:
       DB_HOST: db
       DB_PORT: ${DB_PORT}
