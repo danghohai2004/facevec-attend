@@ -76,7 +76,7 @@ Configuration files: `.env.example`, `config.py`, `Dockerfile`, `compose.yaml`, 
 
 ### 2) Connect via psql:
 
-    psql -U post <database_user>
+    psql -U <database_user>
 
 #### `database_user` -> see`.env` -> `DB_USER`
 
@@ -90,11 +90,13 @@ Configuration files: `.env.example`, `config.py`, `Dockerfile`, `compose.yaml`, 
     
     \dt
 
-### 5) Remove containers & volumes:
+#### Execute a data query on the table:
+    \pset pager off    
+    SELECT * FROM <table_name>
 
-    docker compose down -v
+### ! Use `docker compose down -v` to remove all data and source code.
 
-## 📜 License
+### 📜 License
 This project is licensed under the MIT License. Feel free to use, modify, and distribute.
 
 ---
