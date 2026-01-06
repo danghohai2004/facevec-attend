@@ -64,8 +64,8 @@ Configuration files: `.env.example`, `config.py`, `compose.yaml`, `requirements.
 ### 3) Run with Docker Compose
     docker-compose up --build
 
-#### Access UI (port configurable via PORT_STREAMLIT in .env):
-    http://localhost:8501
+#### 4) Access UI:
+    python -m streamlit run app_streamlit.py
 
 ## 🗄️ Querying PostgreSQL
 ### 1) Access PostgreSQL container:
