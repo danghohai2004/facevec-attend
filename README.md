@@ -44,7 +44,7 @@ Threshold parameters can be configuration via `config.py`
 
 `app_streamlit` – User interface application
 
-Configuration files: `.env.example`, `config.py`, `Dockerfile`, `compose.yaml`, `requirements.txt`
+Configuration files: `.env.example`, `config.py`, `compose.yaml`, `requirements.txt`
 
 **Note:** Update configurations in `config.py` and `.env.example`.
 
