@@ -94,7 +94,7 @@ Configuration files: `.env.example`, `config.py`, `Dockerfile`, `compose.yaml`, 
     \pset pager off    
     SELECT * FROM <table_name>;
 
-### ! Use `docker compose down -v` to remove all data and source code.
+### ! Use `docker compose down -v` to remove all.
 
 ### 📜 License
 This project is licensed under the MIT License. Feel free to use, modify, and distribute.
