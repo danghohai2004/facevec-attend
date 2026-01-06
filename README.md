@@ -92,7 +92,7 @@ Configuration files: `.env.example`, `config.py`, `Dockerfile`, `compose.yaml`, 
 
 #### Execute a data query on the table:
     \pset pager off    
-    SELECT * FROM <table_name>
+    SELECT * FROM <table_name>;
 
 ### ! Use `docker compose down -v` to remove all data and source code.
 
