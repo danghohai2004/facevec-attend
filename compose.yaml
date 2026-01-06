@@ -12,27 +12,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d
-
-  streamlit:
-    build: .
-    container_name: ${CONTAINER_NAME_APP}
-    depends_on:
-      - db
-    ports:
-      - "${PORT_STREAMLIT}:8501"
-    environment:
-      DB_HOST: db
-      DB_PORT: ${DB_PORT}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-    volumes:
-      - ${FACES_HOST_DIR}:/app/faces
-    devices:
-      - "${CAMERA_DEV}:${CAMERA_DEV}"
-    privileged: true
-    command: >
-      bash -c "streamlit run app_streamlit.py --server.address=0.0.0.0 --server.port=8501"
+    restart: unless-stopped
 
 volumes:
   pgdata:
