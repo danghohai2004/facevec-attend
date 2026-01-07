@@ -16,7 +16,7 @@ from utils.draw_bbox import draw_bbox
 from src.core.face_identifier import identify_person_pgvector
 from src.services.attendance_manager import get_current_time
 from src.services.embedding_manager import add_info_embeddings, remove_embeddings
-from config import ORIGINAL_IMG_PATH, THRESHOLD, APPROX_EMB_FACE
+from config import ORIGINAL_IMG_PATH, THRESHOLD, MAX_EMB_FACE
 
 
 @st.cache_resource
@@ -686,4 +686,4 @@ def streamlit_app(threshold, tota_emb_face, base_path):
         st.error(f"[ERROR APP]: {e}")
 
 if __name__ == "__main__":
-    streamlit_app(threshold=THRESHOLD, tota_emb_face = APPROX_EMB_FACE, base_path=ORIGINAL_IMG_PATH)
+    streamlit_app(threshold=THRESHOLD, tota_emb_face = MAX_EMB_FACE, base_path=ORIGINAL_IMG_PATH)
