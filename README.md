@@ -83,36 +83,35 @@ mv .env.example .env
 
 ## 🗄️ Querying PostgreSQL
 ### 1) Access PostgreSQL container:
-
-    docker exec -it <container_name_db> bash
-
-#### `container_name_db` -> see`.env` -> `CONTAINER_NAME_DB`
+```powershell
+docker exec -it <container_name_db> bash
+# <container_name_db> -> see .env -> CONTAINER_NAME_DB
+```
 
 ### 2) Connect via psql:
-
-    psql -U <database_user>
-
-#### `database_user` -> see`.env` -> `DB_USER`
-
+```powershell
+psql -U <database_user>
+# <database_user> -> see .env -> DB_USER
+```
 ### 3) Select database:
+```powershell
+\c <database_name>
+# <database_name> -> see .env -> DB_NAME
+```
 
-    \c <database_name>
-    
-#### `database_name` -> see`.env` -> `DB_NAME`
-
-### 4) View tables:
-    
-    \dt
-
-#### Execute a data query on the table:
-    \pset pager off    
-    SELECT * FROM <table_name>;
-
-### ! Use `docker compose down -v` to remove all.
-
+### 4) Query Database Tables
+```powershell
+# 1. List all tables
+\dt
+# 2. Execute a query on a specific table
+\pset pager off    
+SELECT * FROM <table_name>;
+```
+### 5) Stop and Remove All Containers, Networks, and Volumes
+    docker compose down -v
+   
 ## Future Enhancements
 The system captures faces from a camera or video stream, generates embedding vectors, and stores them in PostgreSQL along with user information.
-
 
 ## 📜 License
 The system may be updated in the future to include face anti-spoofing / liveness detection, which will help prevent fraudulent attempts using photos, videos, or masks, ensuring that only real, live faces are logged for attendance.
