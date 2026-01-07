@@ -27,14 +27,19 @@ def app_st():
 def get_monthly_report(conn, selected_year, selected_month):
     query = """
                 SELECT
-                    DATE_PART('month', working_date) AS month,
+                    EXTRACT(MONTH FROM working_date) AS month,
                     ROUND(SUM(EXTRACT(EPOCH FROM working_duration)) / 3600, 2) AS total_hours,
                     COUNT(DISTINCT working_date) AS working_days,
-                    ROUND(SUM(EXTRACT(EPOCH FROM working_duration)) / 3600 / COUNT(DISTINCT working_date), 2) AS avg_hours_per_day
+                    ROUND(
+                        SUM(EXTRACT(EPOCH FROM working_duration)) / 3600
+                        / COUNT(DISTINCT working_date),
+                        2
+                    ) AS avg_hours_per_day
                 FROM attendance_logs
-                WHERE DATE_PART('year', working_date) = %s AND DATE_PART('month', working_date) = %s
-                GROUP BY month
-                ORDER BY month;
+                WHERE
+                    EXTRACT(YEAR FROM working_date) = %s
+                    AND EXTRACT(MONTH FROM working_date) = %s
+                GROUP BY month;
             """
     df = pd.read_sql_query(query, conn, params=(selected_year, selected_month))
     return df
