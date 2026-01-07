@@ -57,14 +57,28 @@ Configuration files: `.env.example`, `config.py`, `compose.yaml`, `requirements.
     git clone https://github.com/danghohai2004/facevec-attend.git
     cd facevec-attend
 
-### 2) Configure Environment Variables
-    mv .env.example .env
-    # Please review and update the configuration in config.py and .env.
+### 2) Set up Virtual Environment and Install Dependencies
 
-### 3) Run with Docker Compose
+```powershell
+# 1. Create a virtual environment
+python -m venv .venv
+
+# 2. Activate the virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# 3. Install required packages
+pip install -r requirements.txt
+```
+
+### 3) Configure Environment Variables
+```powershell
+mv .env.example .env
+# Please review and update the configuration in config.py and .env.
+```
+### 4) Run with Docker Compose
     docker-compose up --build
 
-#### 4) Access UI:
+### 5) Access UI:
     python -m streamlit run app_streamlit.py
 
 ## 🗄️ Querying PostgreSQL
