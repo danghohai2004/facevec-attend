@@ -38,54 +38,48 @@ def log_attendance(conn, emp_id, shifts_time):
                 check_in_start = shifts_time["Check in start"]
                 check_in_end = shifts_time["Check in end"]
 
-                if check_in_start > check_in_end and now.time() < time(12,0):
+                if check_in_start > check_in_end and now.time() < time(12, 0):
                     working_date = (now - timedelta(days=1)).date()
 
                 cur.execute("""
-                    SELECT checkin_time
+                    SELECT 1
                     FROM attendance_logs
-                    WHERE emp_id = %s AND working_date = %s
-                """, (emp_id, working_date))
-                existing_log = cur.fetchone()
+                    WHERE emp_id = %s AND checkout_time IS NULL
+                """, (emp_id,))
 
-                if existing_log is None:
-                    cur.execute("""
-                        INSERT INTO attendance_logs (emp_id, working_date, checkin_time)
-                        VALUES (%s, %s, %s)
-                    """, (emp_id, working_date, now.time()))
-                    conn.commit()
-                    return "Check in successful"
-                else:
-                    return "Checked in today"
+                if cur.fetchone():
+                    return "Already checked in"
+
+                cur.execute("""
+                    INSERT INTO attendance_logs (emp_id, working_date, checkin_time)
+                    VALUES (%s, %s, %s)
+                """, (emp_id, working_date, now)) 
+
+                conn.commit()
+                return "Check in successful"
 
             elif check_type == "check_out":
-                cur.execute("""
-                            SELECT working_date, checkin_time
-                            FROM attendance_logs
-                            WHERE emp_id = %s AND checkout_time IS NULL
-                            ORDER BY working_date DESC, checkin_time DESC
-                            LIMIT 1
-                            """, (emp_id,))
-                last_log = cur.fetchone()
 
-                if last_log is None:
+                cur.execute("""
+                    SELECT log_id
+                    FROM attendance_logs
+                    WHERE emp_id = %s AND checkout_time IS NULL
+                    ORDER BY checkin_time DESC
+                    LIMIT 1
+                """, (emp_id,))
+
+                row = cur.fetchone()
+                if row is None:
                     return "Check in not found to check out"
 
-                checkin_date, checkin_time = last_log
-
-                checkin_date_time = datetime.combine(checkin_date, checkin_time)
-                checkout_date_time = now
-
-                if checkout_date_time < checkin_date_time:
-                    checkout_date_time = checkout_date_time + timedelta(days=1)
-
-                working_duration = checkout_date_time - checkin_date_time
+                log_id = row[0]
 
                 cur.execute("""
-                            UPDATE attendance_logs
-                            SET checkout_time = %s, working_duration = %s
-                            WHERE emp_id = %s AND working_date = %s AND checkout_time IS NULL
-                            """,(now.time(), working_duration, emp_id, checkin_date))
+                    UPDATE attendance_logs
+                    SET checkout_time = %s
+                    WHERE log_id = %s
+                """, (now, log_id)) 
+
                 conn.commit()
                 return "Check out successful"
 
