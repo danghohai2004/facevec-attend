@@ -76,7 +76,7 @@ mv .env.example .env
 # Please review and update the configuration in config.py and .env.
 ```
 ### 4) Run with Docker Compose
-    docker-compose up --build
+    docker-compose up --build -d
 
 ### 5) Access UI:
     python -m streamlit run app_streamlit.py
