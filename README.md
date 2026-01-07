@@ -6,6 +6,9 @@ It detects and identifies faces in real time, logs attendance automatically, and
 The system captures faces from a camera or video stream, generates embedding vectors, and stores them in PostgreSQL along with user information.
 
 During recognition, cosine similarity is computed between new and stored embeddings to identify the user, after which attendance is logged automatically.
+
+### Click here to watch the demo video: [Watch the video](video_demo.mp4)
+
 ## Recognition Model & Database
 ### Recognition Model
 I tested several InsightFace models (`buffalo_sc`, `buffalo_s`, `buffalo_m`) on my CPU. You can try other models by changing the name in `config.py`:
