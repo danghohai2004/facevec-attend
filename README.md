@@ -96,10 +96,12 @@ Configuration files: `.env.example`, `config.py`, `compose.yaml`, `requirements.
 
 ### ! Use `docker compose down -v` to remove all.
 
-### 📜 License
-This project is licensed under the MIT License. Feel free to use, modify, and distribute.
+## Future Enhancements
+The system captures faces from a camera or video stream, generates embedding vectors, and stores them in PostgreSQL along with user information.
 
----
+
+## 📜 License
+The system may be updated in the future to include face anti-spoofing / liveness detection, which will help prevent fraudulent attempts using photos, videos, or masks, ensuring that only real, live faces are logged for attendance.
 
 ## 📬 Contact
 
