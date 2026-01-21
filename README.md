@@ -1,39 +1,57 @@
 # Facial Recognition Attendance System Using Embeddings
-A smart face-recognition attendance system powered by InsightFace, providing fast and accurate face embeddings.
 
-It detects and identifies faces in real time, logs attendance automatically, and stores all user + attendance data securely in PostgreSQL.
+In many enterprises, schools, and organizations, attendance tracking still relies heavily on traditional methods such as magnetic cards, fingerprint scanners, or manual data entry. These approaches suffer from several limitations:
+- Attendance fraud
+- Time-consuming operation and management
+- Poor scalability as the number of users increases
+- Incompatibility with modern automated systems
+
+The goal of this project is to build an automated face-recognition-based attendance system that operates in real time, delivers high accuracy, and is scalable for real-world deployment.
+
 ## Project Overview
-The system captures faces from a camera or video stream, generates embedding vectors, and stores them in PostgreSQL along with user information.
 
-During recognition, cosine similarity is computed between new and stored embeddings to identify the user, after which attendance is logged automatically.
+The attendance system is built on a face embedding–based approach, rather than direct image matching or training a separate classification model for each individual.
+
+Faces are processed using  [InsightFace](https://github.com/deepinsight/insightface/tree/master/python-package) to extract embedding vectors, which are stored in PostgreSQL as vector data via [ankane/pgvector](https://hub.docker.com/r/ankane/pgvector). During recognition, the system leverages pgvector’s cosine distance (<=>) to compare incoming embeddings with stored data, identify the user, and automatically record attendance.
+
+This embedding-based approach provides several key advantages:
+- Fast recognition suitable for real-time applications
+- Strong scalability with large numbers of users
+- No need to retrain the model when new users are added
+- Reduced application-layer overhead by performing vector distance computation directly within PostgreSQL
 
 ### Click here to watch the demo video: [Watch the video](video_demo.mp4)
 
-## Recognition Model & Database
-### Recognition Model
-I tested several InsightFace models (`buffalo_sc`, `buffalo_s`, `buffalo_m`) on my CPU. You can try other models by changing the name in `config.py`:
+## Recognition Model & Database Design
 
-| Model        | Summary                                                               |
-|--------------| --------------------------------------------------------------------- |
-| `buffalo_sc` | Lowest latency → best for real-time                                   |
-| `buffalo_s`  | Adds 2D/3D alignment; slightly slower; small improvement              |
-| `buffalo_m`  | Large detector & embeddings → slowest; higher accuracy; not ideal CPU |
+### Model Comparison & Benchmarks
 
-**Conclusion:** `buffalo_sc` is the best fit for my setup.
+Multiple [InsightFace](https://github.com/deepinsight/insightface/tree/master/python-package) models were benchmarked in a CPU-only environment to evaluate performance under real-world deployment conditions. The recognition model can be configured via `config.py`.
 
-### Database
+Test environment:
+- CPU: AMD Ryzen 7 5800H
+- RAM: 16GB
+- inference: CPU-only
+- Evaluation strategy: process every 5 frames, average over 300 runs
 
-PostgreSQL stores:
+| Model | End-to-End Inference Time  |
+|-------|----|
+| `buffalo_sc` | **~19.9 ms**|
+| `buffalo_s` | ~100 ms   |
+| `buffalo_m` | ~175 ms   |
 
-- User information
 
-- Embeddings
+**Conclusion:** `buffalo_sc` achieves the lowest latency for both embedding extraction and database cosine distance queries, making it the most suitable choice for real-time, CPU-based attendance systems.
 
-- Cosine distance result between embeddings
+### Database Schema & Distance Search
 
-- Attendance logs: name, date, check-in, check-out, total hours
+PostgreSQL is used as the central storage and distance search engine, including:
+- User profile information
+- Face embedding vectors (stored using pgvector)
+- Cosine distance values between embeddings
+- Attendance records: name, date, check-in time, check-out time, total working hours
 
-Threshold parameters can be configuration via `config.py`
+Distance thresholds and related parameters can be configured via `config.py`
 
 ## Main Directories & Files
 
