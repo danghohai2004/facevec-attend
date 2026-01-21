@@ -9,7 +9,7 @@ import pandas as pd
 import tempfile
 import plotly.express as px
 from datetime import datetime, time as tm
-from time import time
+from time import time 
 from utils.conn_db import get_connection
 from utils.model_app import setup_face_app
 from utils.draw_bbox import draw_bbox
@@ -171,47 +171,57 @@ def streamlit_app(threshold, tota_emb_face, base_path):
                             cap_realtime = cv2.VideoCapture(0)
                             stframe = st.empty()
 
-                            while st.session_state.face_reco_running:
-                                ret, frame = cap_realtime.read()
-                                if not ret:
-                                    warning_placeholder_realtime.error("Cannot Open Camera!")
-                                    break
+                            if not cap_realtime.isOpened():
+                                warning_placeholder_realtime.error("Cannot Open Camera!")
+                            else:
+                                frame_count = 0
+                                try:
+                                    while st.session_state.face_reco_running:
+                                        ret, frame = cap_realtime.read()
+                                        if not ret:
+                                            warning_placeholder_realtime.error("Cannot read from camera!")
+                                            break
+                                        
+                                        frame_count += 1
 
-                                faces = app.get(frame)
-                                if faces:
-                                    faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-                                    main_face = faces[0]
-                                    emb_person_frame = main_face.normed_embedding
+                                        if frame_count % 5 == 0:                                            
+                                            faces = app.get(frame)
 
-                                    error_identify, mess_logs, emp_id, name = identify_person_pgvector(
-                                        st.session_state.conn, emb_person_frame, threshold,
-                                        st.session_state.shifts_time)
+                                            if faces:
+                                                faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+                                                main_face = faces[0]
+                                                emb_person_frame = main_face.normed_embedding
 
-                                    if mess_logs is not None:
-                                        if not st.session_state.warned_mess_logs:
-                                            st.warning(name + " - " + mess_logs)
-                                            st.session_state.warned_mess_logs = True
-                                    else:
-                                        st.session_state.warned_mess_logs = False
+                                                error_identify, mess_logs, emp_id, name = identify_person_pgvector(
+                                                    st.session_state.conn, emb_person_frame, threshold,
+                                                    st.session_state.shifts_time)
+                                                    
+                                                if mess_logs is not None:
+                                                    if not st.session_state.warned_mess_logs:
+                                                        st.warning(name + " - " + mess_logs)
+                                                        st.session_state.warned_mess_logs = True
+                                                else:
+                                                    st.session_state.warned_mess_logs = False
 
-                                    if error_identify is not None:
-                                        if not st.session_state.warned_pgvector:
-                                            st.warning(error_identify)
-                                            st.session_state.warned_pgvector = True
-                                    else:
-                                        st.session_state.warned_pgvector = False
+                                                if error_identify is not None:
+                                                    if not st.session_state.warned_pgvector:
+                                                        st.warning(error_identify)
+                                                        st.session_state.warned_pgvector = True
+                                                else:
+                                                    st.session_state.warned_pgvector = False
 
-                                    bbox = main_face.bbox.astype(int)
-                                    draw_bbox(frame, bbox, color=(0, 255, 255), thickness=2, corner_len=10)
-                                    cv2.putText(frame, name, (bbox[0], bbox[1] - 10),
-                                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                                                bbox = main_face.bbox.astype(int)
+                                                draw_bbox(frame, bbox, color=(0, 255, 255), thickness=2, corner_len=10)
+                                                cv2.putText(frame, name, (bbox[0], bbox[1] - 10),
+                                                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-                                stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), width=700)
+                                        stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), width=700)
 
-                            cap_realtime.release()
-                            stframe.empty()
+                                finally:
+                                    cap_realtime.release()
+                                    stframe.empty()
 
-                    if select_mode == "VIDEO":
+                    if select_mode == "VIDEO": 
                         st.header("🎬 VIDEO")
 
                         video_file = st.file_uploader("📁 Select Video", type=["mp4"], key="attendance_video")
@@ -232,146 +242,212 @@ def streamlit_app(threshold, tota_emb_face, base_path):
 
                             with col2:
                                 if start_attendance_video:
-                                    tfile = tempfile.NamedTemporaryFile(delete=False)
-                                    tfile.write(bytes_data)
+                                    try: 
+                                        tfile = tempfile.NamedTemporaryFile(delete=False)
+                                        tfile.write(bytes_data)
 
-                                    cap_video = cv2.VideoCapture(tfile.name)
-                                    stframe_video = st.empty()
+                                        cap_video = cv2.VideoCapture(tfile.name)
+                                        stframe_video = st.empty()
 
-                                    while cap_video.isOpened():
-                                        ret, frame = cap_video.read()
-                                        if not ret or stop_attendance_video:
-                                            break
+                                        while cap_video.isOpened():
+                                            ret, frame = cap_video.read()
+                                            if not ret or stop_attendance_video:
+                                                break
 
-                                        within_shift, now, check_type = get_current_time(st.session_state.shifts_time)
+                                            within_shift, now, check_type = get_current_time(st.session_state.shifts_time)
 
-                                        if st.session_state.shown_warnings["not_during_shift"]:
-                                            warning_placeholder_video.empty()
-                                            st.session_state.shown_warnings["not_during_shift"] = False
+                                            if st.session_state.shown_warnings["not_during_shift"]:
+                                                warning_placeholder_video.empty()
+                                                st.session_state.shown_warnings["not_during_shift"] = False
 
-                                        if not within_shift:
-                                            if not st.session_state.shown_warnings["not_during_shift"]:
-                                                warning_placeholder_video.warning("Not during working hours!")
-                                                st.session_state.shown_warnings["not_during_shift"] = True
+                                            if not within_shift:
+                                                if not st.session_state.shown_warnings["not_during_shift"]:
+                                                    warning_placeholder_video.warning("Not during working hours!")
+                                                    st.session_state.shown_warnings["not_during_shift"] = True
 
-                                        if within_shift:
-                                            if not st.session_state.shown_warnings["not_during_shift"]:
-                                                warning_placeholder_video.info("PROCESSING...")
-                                                st.session_state.shown_warnings["not_during_shift"] = True
+                                            if within_shift:
+                                                if not st.session_state.shown_warnings["not_during_shift"]:
+                                                    warning_placeholder_video.info("PROCESSING...")
+                                                    st.session_state.shown_warnings["not_during_shift"] = True
 
-                                        if check_type in ["check_in", "check_out"]:
-                                            faces = app.get(frame)
-                                            if faces:
-                                                faces.sort(
-                                                    key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-                                                main_face = faces[0]
-                                                emb_person_frame = main_face.normed_embedding
+                                            if check_type in ["check_in", "check_out"]:
+                                                faces = app.get(frame)
 
-                                                error_identify, mess_logs, emp_id, name = identify_person_pgvector(
-                                                    st.session_state.conn,
-                                                    emb_person_frame,
-                                                    threshold,
-                                                    st.session_state.shifts_time
-                                                )
+                                                if faces:
+                                                    faces.sort(
+                                                        key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+                                                    main_face = faces[0]
+                                                    emb_person_frame = main_face.normed_embedding
 
-                                                if mess_logs is not None:
-                                                    if not st.session_state.warned_mess_logs:
-                                                        mess_logs_placeholder.warning(name + " - " + mess_logs)
-                                                        st.session_state.warned_mess_logs = True
-                                                else:
-                                                    if st.session_state.warned_mess_logs:
-                                                        mess_logs_placeholder.empty()
-                                                        st.session_state.warned_mess_logs = False
+                                                    error_identify, mess_logs, emp_id, name = identify_person_pgvector(
+                                                        st.session_state.conn,
+                                                        emb_person_frame,
+                                                        threshold,
+                                                        st.session_state.shifts_time
+                                                    )
 
-                                                if error_identify is not None:
-                                                    if not st.session_state.warned_pgvector:
-                                                        error_placeholder.warning(error_identify)
-                                                        st.session_state.warned_pgvector = True
-                                                else:
-                                                    if st.session_state.warned_pgvector:
-                                                        error_placeholder.empty()
-                                                        st.session_state.warned_pgvector = False
+                                                    if mess_logs is not None:
+                                                        if not st.session_state.warned_mess_logs:
+                                                            mess_logs_placeholder.warning(name + " - " + mess_logs)
+                                                            st.session_state.warned_mess_logs = True
+                                                    else:
+                                                        if st.session_state.warned_mess_logs:
+                                                            mess_logs_placeholder.empty()
+                                                            st.session_state.warned_mess_logs = False
 
-                                                bbox = main_face.bbox.astype(int)
-                                                draw_bbox(frame, bbox, color=(0, 255, 255), thickness=2, corner_len=10)
-                                                cv2.putText(frame, name, (bbox[0], bbox[1] - 10),
-                                                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                                                    if error_identify is not None:
+                                                        if not st.session_state.warned_pgvector:
+                                                            error_placeholder.warning(error_identify)
+                                                            st.session_state.warned_pgvector = True
+                                                    else:
+                                                        if st.session_state.warned_pgvector:
+                                                            error_placeholder.empty()
+                                                            st.session_state.warned_pgvector = False
+
+                                                    bbox = main_face.bbox.astype(int)
+                                                    draw_bbox(frame, bbox, color=(0, 255, 255), thickness=2, corner_len=10)
+                                                    cv2.putText(frame, name, (bbox[0], bbox[1] - 10),
+                                                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
                                             stframe_video.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), width=700)
 
-
-                                    cap_video.release()
-                                    stframe_video.empty()
+                                    finally:
+                                        cap_video.release()
+                                        stframe_video.empty()
 
         # TAB 3: Register
         with tabs[3]:
             st.header("👤 REGISTER")
+           
             if st.session_state.conn is None:
                 st.error("Not connected to the database")
             elif st.session_state.conn is not None:
                 select_mode = st.selectbox("SELECT MODE for REGISTER", ["REAL TIME", "VIDEO"])
-
+           
                 if select_mode == "REAL TIME":
                     name_person = st.text_input("Enter your name and press the Enter Key - Real Time", key="name_realtime")
 
                     if name_person:
                         start_capture = st.button("Start automatic capture")
-                        stframe = st.empty()
-
-                        process_bar = st.progress(0)
-
                         if start_capture:
                             st.session_state.capturing = True
                             st.session_state.capture_faces = []
                             st.session_state.last_capture_time = 0
 
-                            cap = cv2.VideoCapture(0)
+                        stop_capture = st.button("Stop automatic capture")
+                        if stop_capture:
+                            st.session_state.capturing = False
+                            st.session_state.capture_faces = []
+                            st.session_state.last_capture_time = 0
 
-                            while st.session_state.capturing:
-                                ret, frame = cap.read()
-                                if not ret:
-                                    st.error("Cannot Open Camera!")
-                                    break
+                        if st.session_state.capturing == True:
+                            stframe = st.empty()
+                            process_bar = st.progress(0)
 
-                                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                stframe.image(frame_rgb, channels="RGB", width=700)
+                            cap_realtime = cv2.VideoCapture(0)
 
-                                if time() - st.session_state.last_capture_time > 1.5:
-                                    st.session_state.capture_faces.append(frame_rgb)
-                                    st.session_state.last_capture_time = time()
+                            if not cap_realtime.isOpened():
+                                st.error("Cannot Open Camera!")
+                                
+                            else:
+                                try:
+                                    while st.session_state.capturing:
+                                        ret, frame = cap_realtime.read()
+                                        if not ret:
+                                            st.error("Cannot read from camera!")
+                                            break
 
-                                    count = len(st.session_state.capture_faces)
-                                    process_bar.progress(count / tota_emb_face)
+                                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                        stframe.image(frame_rgb, channels="RGB", width=700)
 
-                                if len(st.session_state.capture_faces) >= tota_emb_face:
-                                    st.session_state.capturing = False
+                                        if time() - st.session_state.last_capture_time > 1.5:
+                                            st.session_state.capture_faces.append(frame_rgb)
+                                            st.session_state.last_capture_time = time()
 
-                            cap.release()
-                            stframe.empty()
+                                            count = len(st.session_state.capture_faces)
+                                            process_bar.progress(count / tota_emb_face)
 
-                        valid_faces = [f for f in st.session_state.capture_faces if f is not None]
+                                        if len(st.session_state.capture_faces) >= tota_emb_face:
+                                            st.session_state.capturing = False
+                                finally:
+                                    cap_realtime.release()
+                                    stframe.empty()
 
-                        if valid_faces:
-                            save_dir = os.path.join(base_path, name_person)
+                            valid_faces = [f for f in st.session_state.capture_faces if f is not None]
 
-                            is_exists = os.path.exists(save_dir)
+                            if valid_faces:
+                                save_dir = os.path.join(base_path, name_person)
 
-                            if is_exists:
-                                st.info(f"User {name_person} already exists. Please choose a suitable option:")
+                                is_exists = os.path.exists(save_dir)
 
-                                if st.button("Add images to this user"):
-                                    existing_files = [f for f in os.listdir(save_dir) if f.endswith(".jpg")]
-                                    start_index = len(existing_files) + 1
+                                if is_exists:
+                                    st.info(f"User {name_person} already exists. Please choose a suitable option:")
 
-                                    for i, img in enumerate(valid_faces[1:], start=start_index):
+                                    if st.button("Add images to this user"):
+                                        existing_files = [f for f in os.listdir(save_dir) if f.endswith(".jpg")]
+                                        start_index = len(existing_files) + 1
+
+                                        for i, img in enumerate(valid_faces[1:], start=start_index):
+                                            img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                                            save_path = os.path.join(save_dir, f"{i}.jpg")
+                                            cv2.imwrite(save_path, img_bgr)
+
+                                        st.success(f"saved {len(valid_faces)} the photo to {save_dir}")
+
+                                        success_emb_add_db, error_emb_add_db = add_info_embeddings(
+                                            st.session_state.conn, base_path, name_person)
+
+                                        if success_emb_add_db is not None:
+                                            st.success(success_emb_add_db)
+                                        if error_emb_add_db is not None:
+                                            st.success(error_emb_add_db)
+
+                                        st.session_state.capture_faces = []
+
+                                    if st.button("Use a different name"):
+                                        st.session_state.different_name = True
+
+                                    if st.session_state.different_name:
+                                        diff_name = st.text_input(
+                                            "Please Enter a different name and press the Enter Key")
+
+                                        if diff_name:
+                                            if diff_name == name_person:
+                                                st.error("Please choose a different name!")
+                                            elif os.path.exists(os.path.join(base_path, diff_name)):
+                                                st.error(f"User '{diff_name}' already exists!")
+                                            else:
+                                                save_dir_different = os.path.join(base_path, diff_name)
+                                                os.makedirs(save_dir_different, exist_ok=True)
+
+                                                for i, img in enumerate(valid_faces[1:], start=1):
+                                                    img_bgr = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                                                    save_path_different = os.path.join(save_dir_different, f"{i}.jpg")
+                                                    cv2.imwrite(save_path_different, img_bgr)
+
+                                                st.success(f"saved {len(valid_faces)} the photo to {save_dir_different}")
+
+                                                success_emb_add_db, error_emb_add_db = add_info_embeddings(
+                                                    st.session_state.conn, base_path, diff_name)
+
+                                                if success_emb_add_db is not None:
+                                                    st.success(success_emb_add_db)
+                                                if error_emb_add_db is not None:
+                                                    st.success(error_emb_add_db)
+
+                                                st.session_state.capture_faces = []
+                                                st.session_state.different_name = False
+
+                                else:
+                                    os.makedirs(save_dir, exist_ok=True)
+
+                                    for i, img in enumerate(valid_faces[1:], start=1):
                                         img_bgr = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                                         save_path = os.path.join(save_dir, f"{i}.jpg")
                                         cv2.imwrite(save_path, img_bgr)
 
                                     st.success(f"saved {len(valid_faces)} the photo to {save_dir}")
-
-                                    success_emb_add_db, error_emb_add_db = add_info_embeddings(
-                                        st.session_state.conn, base_path, name_person)
+                                    success_emb_add_db, error_emb_add_db = add_info_embeddings(st.session_state.conn, base_path, name_person)
 
                                     if success_emb_add_db is not None:
                                         st.success(success_emb_add_db)
@@ -380,78 +456,33 @@ def streamlit_app(threshold, tota_emb_face, base_path):
 
                                     st.session_state.capture_faces = []
 
-                                if st.button("Use a different name"):
-                                    st.session_state.different_name = True
-
-                                if st.session_state.different_name:
-                                    diff_name = st.text_input(
-                                        "Please Enter a different name and press the Enter Key")
-
-                                    if diff_name:
-                                        if diff_name == name_person:
-                                            st.error("Please choose a different name!")
-                                        elif os.path.exists(os.path.join(base_path, diff_name)):
-                                            st.error(f"User '{diff_name}' already exists!")
-                                        else:
-                                            save_dir_different = os.path.join(base_path, diff_name)
-                                            os.makedirs(save_dir_different, exist_ok=True)
-
-                                            for i, img in enumerate(valid_faces[1:], start=1):
-                                                img_bgr = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                                                save_path_different = os.path.join(save_dir_different, f"{i}.jpg")
-                                                cv2.imwrite(save_path_different, img_bgr)
-
-                                            st.success(f"saved {len(valid_faces)} the photo to {save_dir_different}")
-
-                                            success_emb_add_db, error_emb_add_db = add_info_embeddings(
-                                                st.session_state.conn, base_path, diff_name)
-
-                                            if success_emb_add_db is not None:
-                                                st.success(success_emb_add_db)
-                                            if error_emb_add_db is not None:
-                                                st.success(error_emb_add_db)
-
-                                            st.session_state.capture_faces = []
-                                            st.session_state.different_name = False
-
-                            else:
-                                os.makedirs(save_dir, exist_ok=True)
-
-                                for i, img in enumerate(valid_faces[1:], start=1):
-                                    img_bgr = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                                    save_path = os.path.join(save_dir, f"{i}.jpg")
-                                    cv2.imwrite(save_path, img_bgr)
-
-                                st.success(f"saved {len(valid_faces)} the photo to {save_dir}")
-                                success_emb_add_db, error_emb_add_db = add_info_embeddings(st.session_state.conn, base_path, name_person)
-
-                                if success_emb_add_db is not None:
-                                    st.success(success_emb_add_db)
-                                if error_emb_add_db is not None:
-                                    st.success(error_emb_add_db)
-
-                                st.session_state.capture_faces = []
-
                 if select_mode == "VIDEO":
                     name_person = st.text_input("Enter your name and press the Enter Key - Video", key="name_video")
 
                     if name_person:
                         video_cap = st.file_uploader("📁 Select Video", type=["mp4"], key="register_video")
-                        stframe = st.empty()
+                       
                         if video_cap is not None:
-                            tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                            tfile.write(video_cap.read())
-
                             start_capture = st.button("Start automatic capture")
-
-                            process_bar = st.progress(0)
-
                             if start_capture:
                                 st.session_state.capturing = True
                                 st.session_state.capture_faces = []
                                 st.session_state.last_capture_time = 0
 
+                            stop_capture = st.button("Stop automatic capture")
+                            if stop_capture:
+                                st.session_state.capturing = False
+                                st.session_state.capture_faces = []
+                                st.session_state.last_capture_time = 0
+
+                            tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                            tfile.write(video_cap.read())
+
+                            if start_capture:
+                                process_bar = st.progress(0)
+
                                 cap = cv2.VideoCapture(tfile.name)
+                                stframe = st.empty()
 
                                 while st.session_state.capturing:
                                     ret, frame = cap.read()
