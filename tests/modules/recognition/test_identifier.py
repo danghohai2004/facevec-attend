@@ -25,7 +25,7 @@ async def test_identify_returns_payload_above_threshold():
     qdrant.search = AsyncMock(return_value=[hit])
 
     result = await identify(qdrant, [0.1] * 512, threshold=0.6)
-    assert result == {"emp_id": 1, "name": "Nguyen Van A", "emp_code": "NV001"}
+    assert result == {"emp_id": 1, "name": "Nguyen Van A", "emp_code": "NV001", "score": 0.8}
 
 
 @pytest.mark.asyncio
