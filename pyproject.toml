@@ -17,3 +17,12 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "plotly>=5.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-p no:launch_testing -p no:launch_ros"  # ponytail: block ROS pytest plugins leaking via PYTHONPATH
