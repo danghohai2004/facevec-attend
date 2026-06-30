@@ -1,9 +1,3 @@
-from insightface.app import FaceAnalysis
-import streamlit as st
-from config import MODEL
+from src.platform.ml.face_app import setup_face_app
 
-@st.cache_resource
-def setup_face_app():
-    app = FaceAnalysis(name=MODEL['name'], providers=MODEL['providers'])
-    app.prepare(ctx_id=MODEL['ctx_id'], det_size=MODEL['det_size'])
-    return app
+__all__ = ["setup_face_app"]
