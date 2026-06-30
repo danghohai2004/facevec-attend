@@ -17,7 +17,7 @@ CREATE TABLE attendance_logs (
 );
 
 CREATE INDEX ON attendance_logs (emp_id, working_date);
-CREATE INDEX ON attendance_logs (emp_id, working_date) WHERE checkout_time IS NULL;
+CREATE UNIQUE INDEX ON attendance_logs (emp_id, working_date) WHERE checkout_time IS NULL;
 
 CREATE TABLE shift_settings (
     id              SERIAL PRIMARY KEY,

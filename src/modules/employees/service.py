@@ -30,15 +30,6 @@ async def register_employee(
         else:
             employee.name = name
 
-        # Delete existing embeddings before re-registering (replace, not accumulate)
-        if employee.emp_id:
-            await qdrant.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=FilterSelector(
-                    filter=Filter(must=[FieldCondition(key="emp_id", match=MatchValue(value=employee.emp_id))])
-                ),
-            )
-
         points = [
             PointStruct(
                 id=str(uuid.uuid4()),
@@ -47,10 +38,23 @@ async def register_employee(
             )
             for emb in embeddings
         ]
-        await qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
 
+        # ponytail: commit DB first — emp_id is permanent before Qdrant is touched,
+        # so a DB rollback never leaves orphaned vectors pointing at a ghost emp_id
         await db.commit()
         await db.refresh(employee)
+
+        # Delete stale vectors then upsert; order matters: delete-then-upsert after commit
+        # means worst case is missing vectors (re-register fixes it), not ghost vectors
+        if employee.emp_id:
+            await qdrant.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=FilterSelector(
+                    filter=Filter(must=[FieldCondition(key="emp_id", match=MatchValue(value=employee.emp_id))])
+                ),
+            )
+        await qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
+
         return employee, None
     except Exception as e:
         await db.rollback()

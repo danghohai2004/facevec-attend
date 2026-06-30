@@ -11,6 +11,8 @@ from src.modules.recognition.extractor import extract_embedding_from_frame
 from src.modules.recognition.identifier import identify_face
 
 _executor = ThreadPoolExecutor(max_workers=4)
+# ponytail: strong refs prevent GC from silently cancelling in-flight tasks mid-await
+_pending_tasks: set[asyncio.Task] = set()
 
 
 async def run_pipeline(
@@ -24,9 +26,11 @@ async def run_pipeline(
     loop = asyncio.get_running_loop()
     while True:
         item = await queue.get()
-        asyncio.create_task(
+        task = asyncio.create_task(
             _process(item, qdrant, db_factory, manager, checker, threshold, loop)
         )
+        _pending_tasks.add(task)
+        task.add_done_callback(_pending_tasks.discard)
 
 
 async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
@@ -65,7 +69,7 @@ async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
             "emp_id": person["emp_id"],
             "name": person["name"],
             "attendance": attendance_result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": ts,  # reuse ts captured before CPU work
         })
     except Exception as e:
         await manager.send(item.client_id, {"status": "error", "detail": str(e)})
