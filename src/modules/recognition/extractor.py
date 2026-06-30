@@ -28,4 +28,4 @@ def extract_embedding_from_frame(img: np.ndarray) -> list[float] | None:
     if not faces:
         return None
     faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-    return faces[0].embedding.tolist()
+    return faces[0].normed_embedding.tolist()
