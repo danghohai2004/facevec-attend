@@ -21,7 +21,7 @@ async def run_pipeline(
     checker: LivenessChecker,
     threshold: float = 0.6,
 ) -> None:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while True:
         item = await queue.get()
         asyncio.create_task(

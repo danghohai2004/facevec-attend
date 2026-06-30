@@ -21,6 +21,8 @@ def make_ws_router(queue: FrameQueue, manager: ConnectionManager) -> APIRouter:
                     captured_at=time.time(),
                 ))
         except WebSocketDisconnect:
+            pass
+        finally:
             manager.disconnect(client_id)
 
     return router

@@ -16,9 +16,9 @@ async def extract_embeddings_from_bytes(frame: bytes) -> list[list[float]]:
     if img is None:
         return []
     app = setup_face_app()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     faces = await loop.run_in_executor(_executor, app.get, img)
-    return [face.embedding.tolist() for face in faces]
+    return [face.normed_embedding.tolist() for face in faces]
 
 
 def extract_embedding_from_frame(img: np.ndarray) -> list[float] | None:
