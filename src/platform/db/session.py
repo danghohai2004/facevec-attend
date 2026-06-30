@@ -1,4 +1,6 @@
 import os
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import psycopg2
 from dotenv import load_dotenv
@@ -22,7 +24,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_db():
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as db:
         try:
             yield db
@@ -30,7 +32,7 @@ async def get_db():
             await db.close()
 
 
-def get_connection():
+def get_connection() -> tuple[Any, str | None]:
     try:
         conn = psycopg2.connect(
             user=os.getenv("DB_USER"),
