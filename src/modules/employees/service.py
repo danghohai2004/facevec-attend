@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct, FilterSelector
 
 from src.modules.employees.models import Employee
 from src.platform.db.qdrant import COLLECTION_NAME
@@ -29,6 +29,15 @@ async def register_employee(
             await db.flush()
         else:
             employee.name = name
+
+        # Delete existing embeddings before re-registering (replace, not accumulate)
+        if employee.emp_id:
+            await qdrant.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=FilterSelector(
+                    filter=Filter(must=[FieldCondition(key="emp_id", match=MatchValue(value=employee.emp_id))])
+                ),
+            )
 
         points = [
             PointStruct(
@@ -70,8 +79,8 @@ async def remove_employee(
 
         await qdrant.delete(
             collection_name=COLLECTION_NAME,
-            points_selector=Filter(
-                must=[FieldCondition(key="emp_id", match=MatchValue(value=employee.emp_id))]
+            points_selector=FilterSelector(
+                filter=Filter(must=[FieldCondition(key="emp_id", match=MatchValue(value=employee.emp_id))])
             ),
         )
 
