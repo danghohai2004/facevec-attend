@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.db.qdrant import get_qdrant_client
@@ -36,7 +35,7 @@ async def api_register(
 
     contents = await file.read()
     try:
-        embeddings = await run_in_threadpool(extract_embeddings_from_bytes, contents)
+        embeddings = await extract_embeddings_from_bytes(contents)
     except ValueError:
         raise HTTPException(400, "Không thể đọc file ảnh.")
     if not embeddings:
