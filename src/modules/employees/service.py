@@ -10,6 +10,7 @@ from src.platform.db.qdrant import COLLECTION_NAME
 
 ERR_NOT_FOUND = "EMPLOYEE_NOT_FOUND"
 ERR_MISSING_ID = "MISSING_IDENTIFIER"
+ERR_DUPLICATE = "EMPLOYEE_DUPLICATE"
 
 
 async def register_employee(
@@ -23,12 +24,12 @@ async def register_employee(
         result = await db.execute(select(Employee).filter(Employee.emp_code == emp_code))
         employee = result.scalar_one_or_none()
 
-        if not employee:
-            employee = Employee(name=name, emp_code=emp_code)
-            db.add(employee)
-            await db.flush()
-        else:
-            employee.name = name
+        if employee:
+            return None, ERR_DUPLICATE
+
+        employee = Employee(name=name, emp_code=emp_code)
+        db.add(employee)
+        await db.flush()
 
         points = [
             PointStruct(
@@ -44,15 +45,8 @@ async def register_employee(
         await db.commit()
         await db.refresh(employee)
 
-        # Delete stale vectors then upsert; order matters: delete-then-upsert after commit
-        # means worst case is missing vectors (re-register fixes it), not ghost vectors
-        if employee.emp_id:
-            await qdrant.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=FilterSelector(
-                    filter=Filter(must=[FieldCondition(key="emp_id", match=MatchValue(value=employee.emp_id))])
-                ),
-            )
+        # New employee only (duplicates are rejected above), so there are no stale
+        # vectors under this fresh emp_id — just upsert.
         await qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
 
         return employee, None
