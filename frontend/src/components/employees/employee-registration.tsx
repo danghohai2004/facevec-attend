@@ -42,6 +42,37 @@ function dataUrlToFile(dataUrl: string, filename: string) {
   return new File([array], filename, { type: mime });
 }
 
+function CapturedFramePreview({
+  file,
+  index,
+}: {
+  file: File;
+  index: number;
+}) {
+  const imageRef = React.useRef<HTMLImageElement>(null);
+
+  React.useEffect(() => {
+    const url = URL.createObjectURL(file);
+    const image = imageRef.current;
+    if (image) {
+      image.src = url;
+    }
+    return () => {
+      image?.removeAttribute("src");
+      URL.revokeObjectURL(url);
+    };
+  }, [file]);
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={imageRef}
+      alt={`capture-${index}`}
+      className="h-20 w-full object-cover"
+    />
+  );
+}
+
 export function EmployeeRegistration() {
   const [step, setStep] = React.useState<1 | 2>(1);
   const [autoCaptureEnabled, setAutoCaptureEnabled] = React.useState(true);
@@ -245,12 +276,7 @@ export function EmployeeRegistration() {
                       key={`${file.name}-${index}`}
                       className="group relative overflow-hidden rounded-lg border bg-muted/40"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={URL.createObjectURL(file)}
-                        alt={`capture-${index}`}
-                        className="h-20 w-full object-cover"
-                      />
+                      <CapturedFramePreview file={file} index={index} />
                       <button
                         type="button"
                         onClick={() => removeFile(index)}

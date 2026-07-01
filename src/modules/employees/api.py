@@ -34,12 +34,15 @@ async def api_register(
     from src.modules.recognition.extractor import extract_embeddings_from_bytes
 
     contents = await file.read()
+    MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # ponytail: chặn ảnh khổng lồ/decompression bomb
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Ảnh quá lớn (tối đa 5MB).")
     try:
         embeddings = await extract_embeddings_from_bytes(contents)
     except ValueError:
         raise HTTPException(400, "Không thể đọc file ảnh.")
-    if not embeddings:
-        raise HTTPException(400, "Không tìm thấy khuôn mặt trong ảnh.")
+    if len(embeddings) != 1:
+        raise HTTPException(400, "Ảnh phải có đúng 1 khuôn mặt.")
 
     qdrant = get_qdrant_client()
     employee, err = await register_employee(db, qdrant, name, emp_code, embeddings)

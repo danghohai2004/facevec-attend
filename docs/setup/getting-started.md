@@ -5,7 +5,7 @@
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (package manager)
 - Docker & Docker Compose
-- Node.js 18+ (cho frontend kiosk)
+- Node.js 20+ (cho frontend kiosk)
 
 ---
 

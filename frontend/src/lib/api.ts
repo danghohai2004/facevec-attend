@@ -1,6 +1,5 @@
 import axios from "axios";
 import type {
-  AttendanceRecord,
   Employee,
   EmployeeList,
   ShiftSettings,
@@ -180,27 +179,6 @@ export async function deleteEmployee(employeeId: string) {
   return response.data;
 }
 
-export async function listAttendanceHistory(params: {
-  empId?: string;
-  fromDate?: string;
-  toDate?: string;
-}) {
-  const response = await api.get("/attendance", {
-    params: {
-      emp_id: params.empId,
-      from_date: params.fromDate,
-      to_date: params.toDate,
-    },
-  });
-  const payload = response.data;
-  const items: AttendanceRecord[] =
-    payload?.items ?? payload?.data ?? payload?.results ?? payload ?? [];
-  if (!Array.isArray(items)) {
-    throw new Error("Unexpected attendance response.");
-  }
-  return items;
-}
-
 export async function getShiftSettings(): Promise<ShiftSettings> {
   const response = await api.get("/shift-settings");
   return normalizeShiftSettings(response.data);
@@ -213,24 +191,24 @@ export async function updateShiftSettings(
   return normalizeShiftSettings(response.data);
 }
 
-export async function checkIn(payload: {
-  empId: string;
-  shiftSettings: ShiftSettings;
-}) {
-  const response = await api.post("/attendance/checkin", {
-    emp_id: payload.empId,
-    shifts_time: toApiShiftSettings(payload.shiftSettings),
+export async function checkIn(payload: { empId: string }) {
+  const empId = Number(payload.empId);
+  if (Number.isNaN(empId)) {
+    throw new Error("Employee ID phải là số.");
+  }
+  const response = await api.post("/attendance/checkin", null, {
+    params: { emp_id: empId },
   });
   return response.data;
 }
 
-export async function checkOut(payload: {
-  empId: string;
-  shiftSettings: ShiftSettings;
-}) {
-  const response = await api.post("/attendance/checkout", {
-    emp_id: payload.empId,
-    shifts_time: toApiShiftSettings(payload.shiftSettings),
+export async function checkOut(payload: { empId: string }) {
+  const empId = Number(payload.empId);
+  if (Number.isNaN(empId)) {
+    throw new Error("Employee ID phải là số.");
+  }
+  const response = await api.post("/attendance/checkout", null, {
+    params: { emp_id: empId },
   });
   return response.data;
 }

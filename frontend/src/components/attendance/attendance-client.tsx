@@ -5,7 +5,6 @@ import Webcam from "react-webcam";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { checkIn, checkOut } from "@/lib/api";
-import { demoEmployees } from "@/lib/mock-data";
 import { useShiftSettings } from "@/lib/shift-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,41 +31,11 @@ const videoConstraints = {
 
 export function AttendanceClient() {
   const { settings } = useShiftSettings();
-  const webcamRef = React.useRef<Webcam>(null);
 
   const [isStreaming, setIsStreaming] = React.useState(false);
-  const [snapshot, setSnapshot] = React.useState<string | null>(null);
-  const [detection, setDetection] = React.useState<Detection | null>(null);
+  const [detection] = React.useState<Detection | null>(null);
   const [action, setAction] = React.useState<"checkin" | "checkout">("checkin");
   const [manualEmpId, setManualEmpId] = React.useState("");
-
-  React.useEffect(() => {
-    if (!isStreaming) {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      const capture = webcamRef.current?.getScreenshot();
-      if (capture) {
-        setSnapshot(capture);
-      }
-      const randomEmployee =
-        demoEmployees[Math.floor(Math.random() * demoEmployees.length)];
-      setDetection({
-        id: randomEmployee.id,
-        name: randomEmployee.name,
-        empId: randomEmployee.id,
-        status: action,
-        box: {
-          x: 22 + Math.random() * 30,
-          y: 20 + Math.random() * 20,
-          width: 35,
-          height: 45,
-        },
-      });
-    }, 2000);
-
-    return () => window.clearInterval(interval);
-  }, [isStreaming, action]);
 
   const checkInMutation = useMutation({
     mutationFn: checkIn,
@@ -96,9 +65,9 @@ export function AttendanceClient() {
     }
 
     if (action === "checkin") {
-      checkInMutation.mutate({ empId: targetEmpId, shiftSettings: settings });
+      checkInMutation.mutate({ empId: targetEmpId });
     } else {
-      checkOutMutation.mutate({ empId: targetEmpId, shiftSettings: settings });
+      checkOutMutation.mutate({ empId: targetEmpId });
     }
   };
 
@@ -120,7 +89,6 @@ export function AttendanceClient() {
             <CardContent>
               <div className="relative overflow-hidden rounded-xl border bg-muted/40">
                 <Webcam
-                  ref={webcamRef}
                   audio={false}
                   screenshotFormat="image/jpeg"
                   videoConstraints={videoConstraints}
@@ -142,9 +110,6 @@ export function AttendanceClient() {
                 <Button onClick={() => setIsStreaming((prev) => !prev)}>
                   {isStreaming ? "Stop Capture" : "Start Capture"}
                 </Button>
-                {snapshot && (
-                  <Badge variant="outline">Last frame captured</Badge>
-                )}
               </div>
             </CardContent>
           </Card>

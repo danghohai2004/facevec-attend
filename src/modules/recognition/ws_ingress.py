@@ -5,10 +5,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.platform.queue import FrameItem, FrameQueue
 from src.platform.realtime.manager import ConnectionManager
 
-router = APIRouter(tags=["Recognition"])
-
 
 def make_ws_router(queue: FrameQueue, manager: ConnectionManager) -> APIRouter:
+    router = APIRouter(tags=["Recognition"])
+
     @router.websocket("/ws/recognition/{client_id}")
     async def ws_endpoint(websocket: WebSocket, client_id: str):
         await manager.connect(client_id, websocket)

@@ -7,6 +7,4 @@ MODEL = {
     "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
 }
 
-ORIGINAL_IMG_PATH = "faces"
 THRESHOLD = 0.6
-MAX_EMB_FACE = 50

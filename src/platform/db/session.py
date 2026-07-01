@@ -1,8 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
-from typing import Any
 
-import psycopg2
 from dotenv import load_dotenv
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -30,17 +28,3 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield db
         finally:
             await db.close()
-
-
-def get_connection() -> tuple[Any, str | None]:
-    try:
-        conn = psycopg2.connect(
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
-            database=os.getenv("DB_NAME"),
-        )
-        return conn, None
-    except Exception as e:
-        return None, f"[ERROR CONNECT DB]: {e}"

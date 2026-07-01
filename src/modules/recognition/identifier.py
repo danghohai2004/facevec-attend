@@ -22,7 +22,3 @@ async def identify_face(
     if not results or results[0].score < (1.0 - threshold):
         return None
     return {**results[0].payload, "score": results[0].score}
-
-
-# ponytail: alias so tests/brief using `identify` still work
-identify = identify_face
