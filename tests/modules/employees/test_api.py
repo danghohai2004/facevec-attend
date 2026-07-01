@@ -122,3 +122,26 @@ def test_register_accepts_image_with_one_face(client, monkeypatch, api_key_heade
         "employee": {"emp_id": 1, "name": "Alice", "emp_code": "EMP-1"},
     }
     register_employee.assert_awaited_once()
+
+
+def test_register_returns_conflict_for_duplicate_emp_code(
+    client,
+    monkeypatch,
+    api_key_headers,
+):
+    extract_embeddings = AsyncMock(return_value=[[0.1, 0.2]])
+    register_employee = AsyncMock(return_value=(None, "EMPLOYEE_DUPLICATE"))
+    monkeypatch.setattr(extractor, "extract_embeddings_from_bytes", extract_embeddings)
+    monkeypatch.setattr(employees_api, "register_employee", register_employee)
+    monkeypatch.setattr(employees_api, "get_qdrant_client", lambda: object())
+
+    response = client.post(
+        "/api/employees",
+        data={"name": "Alice", "emp_code": "EMP-1"},
+        files={"file": ("face.jpg", b"image", "image/jpeg")},
+        headers=api_key_headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Employee code already exists."}
+    register_employee.assert_awaited_once()

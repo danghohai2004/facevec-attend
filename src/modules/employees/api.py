@@ -12,6 +12,7 @@ from src.modules.employees.schemas import (
     EmployeeRemoveResponse,
 )
 from src.modules.employees.service import (
+    ERR_DUPLICATE,
     ERR_MISSING_ID,
     ERR_NOT_FOUND,
     get_employee,
@@ -52,6 +53,8 @@ async def api_register(
     qdrant = get_qdrant_client()
     employee, err = await register_employee(db, qdrant, name, emp_code, embeddings)
     if err:
+        if err == ERR_DUPLICATE:
+            raise HTTPException(409, "Employee code already exists.")
         raise HTTPException(500, err)
     return EmployeeRegisterResponse(
         message=f"Registered {employee.name} ({employee.emp_code})",
