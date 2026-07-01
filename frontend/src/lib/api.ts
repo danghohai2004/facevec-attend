@@ -16,6 +16,10 @@ export const api = axios.create({
   baseURL: apiBaseUrl,
 });
 
+const writeApi = axios.create({
+  baseURL: "/api/write",
+});
+
 function normalizeEmployee(raw: unknown): Employee {
   if (!raw || typeof raw !== "object") {
     throw new Error("Unexpected employee payload.");
@@ -160,9 +164,7 @@ export async function createEmployee(payload: {
     formData.append("file", file);
   });
 
-  const response = await api.post("/employees", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const response = await writeApi.post("/employees", formData);
   const data = response.data;
   if (data?.employee) {
     return { ...data, employee: normalizeEmployee(data.employee) };
@@ -175,7 +177,7 @@ export async function deleteEmployee(employeeId: string) {
   const params = Number.isNaN(parsedId)
     ? { emp_code: employeeId }
     : { emp_id: parsedId };
-  const response = await api.delete("/employees", { params });
+  const response = await writeApi.delete("/employees", { params });
   return response.data;
 }
 
@@ -187,7 +189,10 @@ export async function getShiftSettings(): Promise<ShiftSettings> {
 export async function updateShiftSettings(
   payload: ShiftSettings,
 ): Promise<ShiftSettings> {
-  const response = await api.put("/shift-settings", toApiShiftSettings(payload));
+  const response = await writeApi.put(
+    "/shift-settings",
+    toApiShiftSettings(payload),
+  );
   return normalizeShiftSettings(response.data);
 }
 
@@ -196,7 +201,7 @@ export async function checkIn(payload: { empId: string }) {
   if (Number.isNaN(empId)) {
     throw new Error("Employee ID phải là số.");
   }
-  const response = await api.post("/attendance/checkin", null, {
+  const response = await writeApi.post("/attendance/checkin", null, {
     params: { emp_id: empId },
   });
   return response.data;
@@ -207,7 +212,7 @@ export async function checkOut(payload: { empId: string }) {
   if (Number.isNaN(empId)) {
     throw new Error("Employee ID phải là số.");
   }
-  const response = await api.post("/attendance/checkout", null, {
+  const response = await writeApi.post("/attendance/checkout", null, {
     params: { emp_id: empId },
   });
   return response.data;

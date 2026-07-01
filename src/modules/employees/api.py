@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.platform.auth import require_api_key
 from src.platform.db.qdrant import get_qdrant_client
 from src.platform.db.session import get_db
 from src.modules.employees.schemas import (
@@ -23,7 +24,11 @@ from src.modules.employees.service import (
 router = APIRouter(prefix="/api/employees", tags=["Employees"])
 
 
-@router.post("", response_model=EmployeeRegisterResponse)
+@router.post(
+    "",
+    response_model=EmployeeRegisterResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def api_register(
     name: str = Form(...),
     emp_code: str = Form(...),
@@ -89,7 +94,11 @@ async def api_get(identifier: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.delete("", response_model=EmployeeRemoveResponse)
+@router.delete(
+    "",
+    response_model=EmployeeRemoveResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def api_remove(
     emp_id: int | None = Query(None),
     emp_code: str | None = Query(None),

@@ -2,6 +2,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.platform.auth import require_api_key
 from src.platform.db.session import get_db
 from src.modules.attendance.schemas import (
     ShiftsTime, AttendanceLogOut, AttendanceHistoryResponse, AttendanceCheckResponse,
@@ -14,7 +15,11 @@ from src.modules.employees.service import get_employee, ERR_NOT_FOUND
 router = APIRouter(prefix="/api", tags=["Attendance"])
 
 
-@router.post("/attendance/checkin", response_model=AttendanceCheckResponse)
+@router.post(
+    "/attendance/checkin",
+    response_model=AttendanceCheckResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def api_checkin(emp_id: int = Query(...), db: AsyncSession = Depends(get_db)):
     # Fix #3: no shifts_time from client — service loads from DB
     employee, err = await get_employee(db, emp_id)
@@ -29,7 +34,11 @@ async def api_checkin(emp_id: int = Query(...), db: AsyncSession = Depends(get_d
     )
 
 
-@router.post("/attendance/checkout", response_model=AttendanceCheckResponse)
+@router.post(
+    "/attendance/checkout",
+    response_model=AttendanceCheckResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def api_checkout(emp_id: int = Query(...), db: AsyncSession = Depends(get_db)):
     employee, err = await get_employee(db, emp_id)
     if err:
@@ -72,7 +81,11 @@ async def api_shift_get(db: AsyncSession = Depends(get_db)):
     return ShiftsTime.model_validate(settings)
 
 
-@router.put("/shift-settings", response_model=ShiftsTime)
+@router.put(
+    "/shift-settings",
+    response_model=ShiftsTime,
+    dependencies=[Depends(require_api_key)],
+)
 async def api_shift_update(payload: ShiftsTime, db: AsyncSession = Depends(get_db)):
     settings, err = await upsert_shift_settings(db, payload.model_dump())
     if err:
