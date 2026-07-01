@@ -1,28 +1,41 @@
 # ==== Environment ====
 .env
-.streamlit/secrets.toml
 .venv/
 venv/
 
-# ==== Python cache ====
+# ==== Python ====
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
+.pytest_cache/
+.python-version
 
 # ==== Logs ====
 *.log
 
-# ==== IDE files ====
+# ==== IDE ====
 .idea/
 *.iml
+.vscode/
 
-# ==== OS files ====
+# ==== OS ====
 .DS_Store
 Thumbs.db
 
-# ==== local inferen ====
-inference/*
+# ==== Frontend build ====
+frontend/.next/
+frontend/node_modules/
 
-# ==== Compiled Python files ====
-*.pyo
-*.pyd
+# ==== Data / media ====
+faces/*
+!faces/.gitkeep
+inference/
+*.mp4
+*.avi
+
+# ==== Superpowers scratch ====
+.superpowers/sdd/*.diff
+.superpowers/sdd/*-brief.md
+.superpowers/sdd/*-report.md
