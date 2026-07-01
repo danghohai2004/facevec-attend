@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ from src.platform.db.session import AsyncSessionLocal
 from src.platform.config import THRESHOLD
 from src.platform.queue import FrameQueue
 from src.platform.realtime.manager import ConnectionManager
-from src.modules.antispoofing.service import get_liveness_checker
+from src.modules.antispoofing.service import PassThroughChecker, get_liveness_checker
 from src.modules.recognition.pipeline import run_pipeline
 from src.modules.recognition.ws_ingress import make_ws_router
 from src.modules.employees.api import router as employees_router
@@ -23,9 +24,15 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        checker = get_liveness_checker()
+        if os.getenv("ENV", "").lower() == "production" and isinstance(
+            checker,
+            PassThroughChecker,
+        ):
+            raise RuntimeError("PassThroughChecker cannot be used in production.")
+
         await ensure_collection()
         qdrant = get_qdrant_client()
-        checker = get_liveness_checker()
         app.state.pipeline_task = asyncio.create_task(
             run_pipeline(
                 queue=queue,

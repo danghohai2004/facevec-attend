@@ -13,7 +13,7 @@ Task 2.1 **chỉ** bảo vệ backend write khỏi client mạng tuỳ ý (curl 
 
 ## Đã có task trong `implementation_plan_for_gpt55.md`
 
-- **Anti-spoofing / liveness thật** — Task 2.2 chỉ chặn boot prod khi còn PassThrough; liveness thật ở Phase 3.
+- **Anti-spoofing / liveness thật** — Task 2.2 chỉ chặn boot prod khi còn PassThrough; liveness thật ở Phase 3. **Lưu ý:** guard là *opt-in* — chỉ kích hoạt khi `ENV=production` (đã chuẩn hoá hoa/thường). Nếu prod quên set `ENV`, guard im lặng và liveness giả vẫn chạy. Cân nhắc chuyển sang default-deny (chỉ cho PassThrough khi `ENV` rõ ràng là dev) nếu muốn secure-by-default.
 - **Internal error leakage** — Task 2.6 (ngừng trả chuỗi exception ra client).
 - **Network isolation + Qdrant auth + pin image** — Task 2.8 (Qdrant hiện unauthenticated + host-published, tag `latest`).
 - **npm audit advisories** — Task 2.11.
