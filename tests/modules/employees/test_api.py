@@ -22,7 +22,33 @@ def client():
         yield test_client
 
 
-def test_register_rejects_upload_larger_than_five_megabytes(client, monkeypatch):
+@pytest.fixture
+def api_key_headers(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-key")
+    return {"X-API-Key": "test-key"}
+
+
+def test_register_requires_api_key(client, monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-key")
+    extract_embeddings = AsyncMock()
+    monkeypatch.setattr(extractor, "extract_embeddings_from_bytes", extract_embeddings)
+
+    response = client.post(
+        "/api/employees",
+        data={"name": "Alice", "emp_code": "EMP-1"},
+        files={"file": ("face.jpg", b"image", "image/jpeg")},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid or missing API key"}
+    extract_embeddings.assert_not_awaited()
+
+
+def test_register_rejects_upload_larger_than_five_megabytes(
+    client,
+    monkeypatch,
+    api_key_headers,
+):
     extract_embeddings = AsyncMock(return_value=[[0.1, 0.2]])
     register_employee = AsyncMock(
         return_value=(
@@ -38,6 +64,7 @@ def test_register_rejects_upload_larger_than_five_megabytes(client, monkeypatch)
         "/api/employees",
         data={"name": "Alice", "emp_code": "EMP-1"},
         files={"file": ("face.jpg", b"x" * (5 * 1024 * 1024 + 1), "image/jpeg")},
+        headers=api_key_headers,
     )
 
     assert response.status_code == 413
@@ -46,7 +73,7 @@ def test_register_rejects_upload_larger_than_five_megabytes(client, monkeypatch)
     register_employee.assert_not_awaited()
 
 
-def test_register_rejects_image_with_multiple_faces(client, monkeypatch):
+def test_register_rejects_image_with_multiple_faces(client, monkeypatch, api_key_headers):
     extract_embeddings = AsyncMock(return_value=[[0.1, 0.2], [0.3, 0.4]])
     register_employee = AsyncMock(
         return_value=(
@@ -62,6 +89,7 @@ def test_register_rejects_image_with_multiple_faces(client, monkeypatch):
         "/api/employees",
         data={"name": "Alice", "emp_code": "EMP-1"},
         files={"file": ("faces.jpg", b"image", "image/jpeg")},
+        headers=api_key_headers,
     )
 
     assert response.status_code == 400
@@ -69,7 +97,7 @@ def test_register_rejects_image_with_multiple_faces(client, monkeypatch):
     register_employee.assert_not_awaited()
 
 
-def test_register_accepts_image_with_one_face(client, monkeypatch):
+def test_register_accepts_image_with_one_face(client, monkeypatch, api_key_headers):
     extract_embeddings = AsyncMock(return_value=[[0.1, 0.2]])
     register_employee = AsyncMock(
         return_value=(
@@ -85,6 +113,7 @@ def test_register_accepts_image_with_one_face(client, monkeypatch):
         "/api/employees",
         data={"name": "Alice", "emp_code": "EMP-1"},
         files={"file": ("face.jpg", b"image", "image/jpeg")},
+        headers=api_key_headers,
     )
 
     assert response.status_code == 200
