@@ -24,3 +24,5 @@ Task 2.1 **chỉ** bảo vệ backend write khỏi client mạng tuỳ ý (curl 
 - **Upload size check sau khi read hết body** (Task 1.5): cap 5MB kiểm tra *sau* `await file.read()` → body lớn vẫn buffer trước khi 413. Nếu cần siết, check `Content-Length`/`file.size` trước khi đọc.
 - **CORS**: hiện `allow_origin_regex` cho localhost. Prod phải khai báo origin thật, không để lỏng.
 - **Proxy allowlist**: nếu đổi/thêm write endpoint, phải cập nhật cả `ALLOWED_TARGETS` trong `frontend/src/app/api/write/[...path]/route.ts` **và** backend dependency — lệch nhau sẽ tạo endpoint không được bảo vệ hoặc không gọi được.
+- **`API_KEY` tồn tại ở 2 nơi** (backend env + Next server env) và phải **cùng giá trị**; lệch → toàn bộ write trả 401 khó chẩn đoán. Cân nhắc nạp từ một secret store chung.
+- **CSRF trên proxy write**: đã thêm same-origin guard (chặn khi `Origin` khác host của app) trong `route.ts`. Guard chỉ chặn request có `Origin` cross-site; client không-browser (server-to-server) vẫn dựa vào API key ở backend. Sau reverse proxy phải bảo đảm header `Host` phản ánh đúng host công khai để guard không chặn nhầm.

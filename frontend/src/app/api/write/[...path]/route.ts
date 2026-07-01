@@ -25,6 +25,26 @@ async function proxyWrite(
   method: WriteMethod,
   context: WriteRouteContext,
 ) {
+  // CSRF guard: this proxy injects the API key for any caller, so a cross-site
+  // form-data/POST (CORS "simple request", no preflight) could forge writes.
+  // Reject when the browser sends an Origin that isn't our own host.
+  const origin = request.headers.get("origin");
+  if (origin) {
+    const host = request.headers.get("host");
+    let originHost: string | null = null;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      originHost = null;
+    }
+    if (!host || originHost !== host) {
+      return Response.json(
+        { detail: "Cross-origin write blocked" },
+        { status: 403 },
+      );
+    }
+  }
+
   const { path } = await context.params;
   const targetPath = ALLOWED_TARGETS[`${method} ${path.join("/")}`];
   if (!targetPath) {
