@@ -19,6 +19,10 @@ def get_qdrant_client() -> AsyncQdrantClient:
             host=os.getenv("QDRANT_HOST", "localhost"),
             port=int(os.getenv("QDRANT_PORT", "6333")),
             api_key=os.getenv("QDRANT_API_KEY"),
+            # qdrant-client auto-enables HTTPS once api_key is set, but local
+            # Qdrant serves plaintext HTTP → default to http. Set QDRANT_HTTPS=true
+            # when Qdrant sits behind TLS in production.
+            https=os.getenv("QDRANT_HTTPS", "false").lower() == "true",
         )
     return _client
 
