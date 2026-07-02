@@ -1,13 +1,13 @@
 import asyncio
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.platform.db.qdrant import ensure_collection, get_qdrant_client
-from src.platform.db.session import AsyncSessionLocal
+from src.platform.db.session import AsyncSessionLocal, engine
 from src.platform.config import THRESHOLD
 from src.platform.queue import FrameQueue
 from src.platform.realtime.manager import ConnectionManager
@@ -43,8 +43,18 @@ def create_app() -> FastAPI:
                 threshold=THRESHOLD,
             )
         )
-        yield
-        app.state.pipeline_task.cancel()
+        try:
+            yield
+        finally:
+            app.state.pipeline_task.cancel()
+            try:
+                with suppress(asyncio.CancelledError):
+                    await app.state.pipeline_task
+            finally:
+                try:
+                    await qdrant.close()
+                finally:
+                    await engine.dispose()
 
     app = FastAPI(
         title="Face Recognition Attendance System",

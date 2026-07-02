@@ -61,6 +61,12 @@ async def api_history(
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            400,
+            "from_date must be before or equal to to_date.",
+        )
+
     employee, err = await get_employee(db, emp_id)
     if err:
         raise HTTPException(404 if err == ERR_NOT_FOUND else 500, err)

@@ -32,31 +32,37 @@ async def run_pipeline(
 ) -> None:
     loop = asyncio.get_running_loop()
 
-    async def _process_with_release(item):
-        try:
-            await _process(
-                item,
-                qdrant,
-                db_factory,
-                manager,
-                checker,
-                threshold,
-                loop,
-            )
-        finally:
-            _sem.release()
+    def _task_done(task: asyncio.Task) -> None:
+        _pending_tasks.discard(task)
+        _sem.release()
 
-    while True:
-        await _sem.acquire()
-        task = None
-        try:
-            item = await queue.get()
-            task = asyncio.create_task(_process_with_release(item))
-        finally:
-            if task is None:
-                _sem.release()
-        _pending_tasks.add(task)
-        task.add_done_callback(_pending_tasks.discard)
+    try:
+        while True:
+            await _sem.acquire()
+            task = None
+            try:
+                item = await queue.get()
+                task = asyncio.create_task(
+                    _process(
+                        item,
+                        qdrant,
+                        db_factory,
+                        manager,
+                        checker,
+                        threshold,
+                        loop,
+                    )
+                )
+            finally:
+                if task is None:
+                    _sem.release()
+            _pending_tasks.add(task)
+            task.add_done_callback(_task_done)
+    finally:
+        pending_tasks = tuple(_pending_tasks)
+        for task in pending_tasks:
+            task.cancel()
+        await asyncio.gather(*pending_tasks, return_exceptions=True)
 
 
 async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
