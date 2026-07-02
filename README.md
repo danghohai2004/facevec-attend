@@ -20,8 +20,6 @@ Advantages of the embedding approach:
 
 > **Note on storage:** an earlier design stored vectors in PostgreSQL via pgvector. The current system uses **Qdrant** for vectors and **PostgreSQL** only for relational data. Face images are **not** persisted — they exist in memory only during registration, long enough to extract the embedding.
 
-### Demo video: [Watch the video](video_demo.mp4)
-
 ## Architecture at a Glance
 
 ```
