@@ -11,6 +11,9 @@ from src.modules.recognition.extractor import extract_embedding_from_frame
 from src.modules.recognition.identifier import identify_face
 
 _executor = ThreadPoolExecutor(max_workers=4)
+# ponytail: cap in-flight _process tasks to match the executor's 4 workers —
+# more concurrency would just queue on _executor anyway. Raise both together.
+_sem = asyncio.Semaphore(4)
 # ponytail: strong refs prevent GC from silently cancelling in-flight tasks mid-await
 _pending_tasks: set[asyncio.Task] = set()
 
@@ -24,11 +27,30 @@ async def run_pipeline(
     threshold: float = 0.6,
 ) -> None:
     loop = asyncio.get_running_loop()
+
+    async def _process_with_release(item):
+        try:
+            await _process(
+                item,
+                qdrant,
+                db_factory,
+                manager,
+                checker,
+                threshold,
+                loop,
+            )
+        finally:
+            _sem.release()
+
     while True:
-        item = await queue.get()
-        task = asyncio.create_task(
-            _process(item, qdrant, db_factory, manager, checker, threshold, loop)
-        )
+        await _sem.acquire()
+        task = None
+        try:
+            item = await queue.get()
+            task = asyncio.create_task(_process_with_release(item))
+        finally:
+            if task is None:
+                _sem.release()
         _pending_tasks.add(task)
         task.add_done_callback(_pending_tasks.discard)
 
