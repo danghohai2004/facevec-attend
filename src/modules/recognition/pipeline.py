@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +11,9 @@ from src.modules.antispoofing.service import LivenessChecker
 from src.modules.recognition.extractor import extract_embedding_from_frame
 from src.modules.recognition.identifier import identify_face
 
+logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR = "Lỗi hệ thống"
 _executor = ThreadPoolExecutor(max_workers=4)
 # ponytail: cap in-flight _process tasks to match the executor's 4 workers —
 # more concurrency would just queue on _executor anyway. Raise both together.
@@ -93,5 +97,9 @@ async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
             "attendance": attendance_result,
             "timestamp": ts,  # reuse ts captured before CPU work
         })
-    except Exception as e:
-        await manager.send(item.client_id, {"status": "error", "detail": str(e)})
+    except Exception:
+        logger.exception("Recognition pipeline processing failed")
+        await manager.send(
+            item.client_id,
+            {"status": "error", "detail": INTERNAL_ERROR},
+        )

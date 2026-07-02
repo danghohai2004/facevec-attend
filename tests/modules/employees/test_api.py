@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -145,3 +145,22 @@ def test_register_returns_conflict_for_duplicate_emp_code(
     assert response.status_code == 409
     assert response.json() == {"detail": "Employee code already exists."}
     register_employee.assert_awaited_once()
+
+
+def test_list_hides_internal_database_error(client, caplog):
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=RuntimeError("postgresql://admin:secret@db/internal")
+    )
+
+    async def override_get_db():
+        yield db
+
+    client.app.dependency_overrides[employees_api.get_db] = override_get_db
+
+    with caplog.at_level("ERROR", logger="src.modules.employees.service"):
+        response = client.get("/api/employees")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Lỗi hệ thống"}
+    assert any(record.exc_info is not None for record in caplog.records)

@@ -1,9 +1,13 @@
+import logging
 from datetime import datetime, time, date
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.attendance.models import AttendanceLog, ShiftSettings
 
+logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR = "Lỗi hệ thống"
 _DEFAULT_SHIFT = {
     "check_in_start": time(8, 0),
     "check_in_end": time(10, 0),
@@ -35,8 +39,9 @@ async def get_shift_settings(db: AsyncSession) -> tuple[ShiftSettings | dict, st
         result = await db.execute(select(ShiftSettings).order_by(ShiftSettings.id).limit(1))
         settings = result.scalar_one_or_none()
         return settings if settings else _DEFAULT_SHIFT, None
-    except Exception as e:
-        return None, f"[ERROR GET SHIFT]: {e}"
+    except Exception:
+        logger.exception("Loading shift settings failed")
+        return None, INTERNAL_ERROR
 
 
 async def upsert_shift_settings(db: AsyncSession, data: dict) -> tuple[ShiftSettings, str | None]:
@@ -52,9 +57,10 @@ async def upsert_shift_settings(db: AsyncSession, data: dict) -> tuple[ShiftSett
         await db.commit()
         await db.refresh(settings)
         return settings, None
-    except Exception as e:
+    except Exception:
+        logger.exception("Updating shift settings failed")
         await db.rollback()
-        return None, f"[ERROR UPSERT SHIFT]: {e}"
+        return None, INTERNAL_ERROR
 
 
 def get_current_time(shifts) -> tuple[bool, datetime, str | None]:
@@ -124,7 +130,7 @@ async def log_attendance(db: AsyncSession, emp_id: int) -> str:
     """Fix #3: loads shifts from DB internally — caller must NOT pass shifts_time."""
     shifts, err = await get_shift_settings(db)
     if err:
-        return f"[ERROR] {err}"
+        return err
 
     within, now, check_type = get_current_time(shifts)
     if not within:
@@ -165,5 +171,6 @@ async def list_attendance_logs(
             .offset((page - 1) * page_size).limit(page_size)
         )
         return result.scalars().all(), total, None
-    except Exception as e:
-        return [], 0, f"[ERROR LIST ATTENDANCE]: {e}"
+    except Exception:
+        logger.exception("Listing attendance logs failed")
+        return [], 0, INTERNAL_ERROR

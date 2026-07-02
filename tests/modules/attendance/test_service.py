@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import src.modules.employees.models  # noqa: F401 — ensure Employee in SQLAlchemy registry before AttendanceLog
 from src.modules.attendance.service import (
-    _is_time_in_range, _normalize_shifts_time, check_in, check_out,
+    _is_time_in_range, _normalize_shifts_time, check_in, check_out, log_attendance,
 )
 
 
@@ -64,3 +64,17 @@ async def test_check_out_scopes_by_working_date():
     # Verify query includes working_date filter — compile Select to SQL text
     call_args = str(db.execute.call_args[0][0])
     assert "working_date" in call_args
+
+
+@pytest.mark.asyncio
+async def test_log_attendance_hides_internal_database_error(caplog):
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=RuntimeError("postgresql://admin:secret@db/internal")
+    )
+
+    with caplog.at_level("ERROR", logger="src.modules.attendance.service"):
+        result = await log_attendance(db, emp_id=1)
+
+    assert result == "Lỗi hệ thống"
+    assert any(record.exc_info is not None for record in caplog.records)

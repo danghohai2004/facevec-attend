@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import suppress
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -59,3 +60,31 @@ async def test_run_pipeline_limits_pending_processing_tasks(monkeypatch):
             *tuple(pipeline._pending_tasks),
             return_exceptions=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_process_hides_internal_error_from_websocket_payload(caplog):
+    item = FrameItem(client_id="cam1", frame=b"jpeg", captured_at=0.0)
+    loop = MagicMock()
+    loop.run_in_executor = AsyncMock(
+        side_effect=RuntimeError("qdrant://admin:secret@vector/internal")
+    )
+    manager = MagicMock()
+    manager.send = AsyncMock()
+
+    with caplog.at_level("ERROR", logger="src.modules.recognition.pipeline"):
+        await pipeline._process(
+            item=item,
+            qdrant=object(),
+            db_factory=object(),
+            manager=manager,
+            checker=object(),
+            threshold=0.6,
+            loop=loop,
+        )
+
+    manager.send.assert_awaited_once_with(
+        "cam1",
+        {"status": "error", "detail": "Lỗi hệ thống"},
+    )
+    assert any(record.exc_info is not None for record in caplog.records)
