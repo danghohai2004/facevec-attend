@@ -18,6 +18,7 @@ def get_qdrant_client() -> AsyncQdrantClient:
         _client = AsyncQdrantClient(
             host=os.getenv("QDRANT_HOST", "localhost"),
             port=int(os.getenv("QDRANT_PORT", "6333")),
+            api_key=os.getenv("QDRANT_API_KEY"),
         )
     return _client
 

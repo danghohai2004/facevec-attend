@@ -15,7 +15,7 @@ Task 2.1 **chỉ** bảo vệ backend write khỏi client mạng tuỳ ý (curl 
 
 - **Anti-spoofing / liveness thật** — Task 2.2 chỉ chặn boot prod khi còn PassThrough; liveness thật ở Phase 3. **Lưu ý:** guard là *opt-in* — chỉ kích hoạt khi `ENV=production` (đã chuẩn hoá hoa/thường). Nếu prod quên set `ENV`, guard im lặng và liveness giả vẫn chạy. Cân nhắc chuyển sang default-deny (chỉ cho PassThrough khi `ENV` rõ ràng là dev) nếu muốn secure-by-default.
 - **Internal error leakage** — Task 2.6 (ngừng trả chuỗi exception ra client).
-- **Network isolation + Qdrant auth + pin image** — Task 2.8 (Qdrant hiện unauthenticated + host-published, tag `latest`).
+- ~~**Network isolation + Qdrant auth + pin image**~~ **[Đã xử lý trong Task 2.8]**: Qdrant + Postgres publish port bind `127.0.0.1` (không lộ ra network), Qdrant image pin `v1.18.2`, và bật `QDRANT__SERVICE__API_KEY` (compose fail nếu thiếu key, client gửi key). *Còn lại:* key đi qua HTTP loopback plaintext → TLS vẫn ở mục dưới; `QDRANT_API_KEY` là secret 2-copy (compose env + backend env) phải cùng giá trị.
 - **npm audit advisories** — Task 2.11.
 - **Attendance retention vs cascade delete** — Phase 3 (xoá employee đang xoá luôn lịch sử chấm công).
 
