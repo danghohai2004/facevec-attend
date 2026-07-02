@@ -7,6 +7,8 @@ Hệ thống dùng **2 database tách biệt theo mục đích**:
 | **PostgreSQL** | employees, attendance_logs, shift_settings (dữ liệu quan hệ) |
 | **Qdrant** | face_embeddings (vector search) |
 
+> Ảnh khuôn mặt **không** được lưu ở bất kỳ đâu — chỉ tồn tại trong RAM lúc đăng ký đủ để trích embedding. Vì vậy không thể tự dựng lại vector từ PostgreSQL; xem `scripts/reconcile_vectors.py` để dò lệch PG↔Qdrant (chi tiết trong [`../architecture/overview.md`](../architecture/overview.md#data-consistency-pg--qdrant)).
+
 ---
 
 ## Tổng quan Storage
@@ -92,6 +94,8 @@ CREATE TABLE attendance_logs (
 
 `working_duration` là computed column — PostgreSQL tự tính, app không cần set.
 
+**Timezone:** `checkin_time`/`checkout_time` lưu **naive** (không tzinfo), biểu diễn giờ tường (wall-clock) theo **Asia/Ho_Chi_Minh**. App quy đổi mọi thời điểm về múi giờ này trước khi ghi (xem `attendance/service.py`), nên `working_date` và so khớp khung giờ ca nhất quán dù server chạy ở UTC.
+
 ---
 
 ### `shift_settings`
@@ -144,11 +148,16 @@ CREATE INDEX ON attendance_logs (emp_id, working_date) WHERE checkout_time IS NU
 
 Mỗi point là 1 embedding khuôn mặt. Payload denormalize tên + mã nhân viên để tránh join về PostgreSQL sau khi search.
 
-**Collection config:**
+**Client + collection config** (`src/platform/db/qdrant.py`):
 ```python
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams
 
-client.create_collection(
+# Client singleton — gửi API key (Qdrant bật QDRANT__SERVICE__API_KEY trong compose)
+client = AsyncQdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, api_key=QDRANT_API_KEY)
+
+# ensure_collection() tạo collection khi app startup nếu chưa có
+await client.create_collection(
     collection_name="face_embeddings",
     vectors_config=VectorParams(size=512, distance=Distance.COSINE),
 )
@@ -187,12 +196,16 @@ if results:
 > Qdrant dùng cosine **similarity** (cao = tốt, -1–1).  
 > Convert: `distance = 1 - similarity`. `THRESHOLD = 0.6` tương đương `score_threshold = 0.4`.
 
-**Xóa embeddings của 1 nhân viên:**
+**Xóa embeddings của 1 nhân viên** (`FilterSelector` bọc quanh `Filter`):
 ```python
-client.delete(
+from qdrant_client.models import FilterSelector, Filter, FieldCondition, MatchValue
+
+await client.delete(
     collection_name="face_embeddings",
-    points_selector=Filter(
-        must=[FieldCondition(key="emp_id", match=MatchValue(value=emp_id))]
+    points_selector=FilterSelector(
+        filter=Filter(
+            must=[FieldCondition(key="emp_id", match=MatchValue(value=emp_id))]
+        )
     ),
 )
 ```
