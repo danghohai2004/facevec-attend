@@ -11,7 +11,7 @@ Task 2.1 **chỉ** bảo vệ backend write khỏi client mạng tuỳ ý (curl 
 - **Rate limiting.** Không có throttle trên write endpoints hay WebSocket ingress → brute-force key / DoS frame flood. Cân nhắc slowapi (backend) hoặc giới hạn ở reverse proxy.
 - **TLS / transport encryption.** Traffic browser→proxy→backend, backend→Postgres, backend→Qdrant hiện plaintext. Prod cần HTTPS ở edge và mã hoá kênh nội bộ (hoặc mạng tin cậy).
 
-## Đã có task trong `implementation_plan_for_gpt55.md`
+## Đã có task remediation (Phase 2)
 
 - **Anti-spoofing / liveness thật** — Task 2.2 chỉ chặn boot prod khi còn PassThrough; liveness thật ở Phase 3. **Lưu ý:** guard là *opt-in* — chỉ kích hoạt khi `ENV=production` (đã chuẩn hoá hoa/thường). Nếu prod quên set `ENV`, guard im lặng và liveness giả vẫn chạy. Cân nhắc chuyển sang default-deny (chỉ cho PassThrough khi `ENV` rõ ràng là dev) nếu muốn secure-by-default.
 - **Internal error leakage** — Task 2.6 (ngừng trả chuỗi exception ra client).
