@@ -160,9 +160,10 @@ export async function createEmployee(payload: {
   const formData = new FormData();
   formData.append("name", payload.name);
   formData.append("emp_code", payload.empCode);
-  payload.files.forEach((file) => {
-    formData.append("file", file);
-  });
+  const representativeFile = payload.files[0];
+  if (representativeFile) {
+    formData.append("file", representativeFile);
+  }
 
   const response = await writeApi.post("/employees", formData);
   const data = response.data;

@@ -1,15 +1,32 @@
+import logging
 from datetime import datetime, time, date
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.attendance.models import AttendanceLog, ShiftSettings
 
+logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR = "Lỗi hệ thống"
+BUSINESS_TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
 _DEFAULT_SHIFT = {
     "check_in_start": time(8, 0),
     "check_in_end": time(10, 0),
     "check_out_start": time(17, 0),
     "check_out_end": time(19, 0),
 }
+
+
+def _as_business_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=BUSINESS_TIMEZONE)
+    return value.astimezone(BUSINESS_TIMEZONE)
+
+
+def _to_database_datetime(value: datetime) -> datetime:
+    return _as_business_datetime(value).replace(tzinfo=None)
 
 
 def _is_time_in_range(current: time, start: time, end: time) -> bool:
@@ -35,8 +52,9 @@ async def get_shift_settings(db: AsyncSession) -> tuple[ShiftSettings | dict, st
         result = await db.execute(select(ShiftSettings).order_by(ShiftSettings.id).limit(1))
         settings = result.scalar_one_or_none()
         return settings if settings else _DEFAULT_SHIFT, None
-    except Exception as e:
-        return None, f"[ERROR GET SHIFT]: {e}"
+    except Exception:
+        logger.exception("Loading shift settings failed")
+        return None, INTERNAL_ERROR
 
 
 async def upsert_shift_settings(db: AsyncSession, data: dict) -> tuple[ShiftSettings, str | None]:
@@ -52,14 +70,15 @@ async def upsert_shift_settings(db: AsyncSession, data: dict) -> tuple[ShiftSett
         await db.commit()
         await db.refresh(settings)
         return settings, None
-    except Exception as e:
+    except Exception:
+        logger.exception("Updating shift settings failed")
         await db.rollback()
-        return None, f"[ERROR UPSERT SHIFT]: {e}"
+        return None, INTERNAL_ERROR
 
 
 def get_current_time(shifts) -> tuple[bool, datetime, str | None]:
     shifts = _normalize_shifts_time(shifts)
-    now = datetime.now()
+    now = datetime.now(BUSINESS_TIMEZONE)
     t = now.time()
     if _is_time_in_range(t, shifts["check_in_start"], shifts["check_in_end"]):
         return True, now, "check_in"
@@ -73,8 +92,11 @@ async def check_in(
     emp_id: int,
     now: datetime | None = None,
 ) -> tuple[AttendanceLog | None, str | None]:
-    now = now or datetime.now()
-    working_date = now.date()
+    business_now = _as_business_datetime(
+        now or datetime.now(BUSINESS_TIMEZONE)
+    )
+    working_date = business_now.date()
+    database_now = _to_database_datetime(business_now)
 
     # Fix #1: scope by working_date — yesterday's unclosed log must not block today
     result = await db.execute(
@@ -87,7 +109,11 @@ async def check_in(
     if result.scalars().first():
         return None, "Already checked in"
 
-    log = AttendanceLog(emp_id=emp_id, working_date=working_date, checkin_time=now)
+    log = AttendanceLog(
+        emp_id=emp_id,
+        working_date=working_date,
+        checkin_time=database_now,
+    )
     db.add(log)
     await db.commit()
     await db.refresh(log)
@@ -99,8 +125,11 @@ async def check_out(
     emp_id: int,
     now: datetime | None = None,
 ) -> tuple[AttendanceLog | None, str | None]:
-    now = now or datetime.now()
-    working_date = now.date()
+    business_now = _as_business_datetime(
+        now or datetime.now(BUSINESS_TIMEZONE)
+    )
+    working_date = business_now.date()
+    database_now = _to_database_datetime(business_now)
 
     # Fix #2: scope by working_date — must not close yesterday's log with today's timestamp
     result = await db.execute(
@@ -114,17 +143,45 @@ async def check_out(
     if log is None:
         return None, "Check in not found to check out"
 
-    log.checkout_time = now
+    log.checkout_time = database_now
     await db.commit()
     await db.refresh(log)
     return log, None
+
+
+async def manual_check_in(
+    db: AsyncSession,
+    emp_id: int,
+) -> tuple[AttendanceLog | None, str | None]:
+    shifts, err = await get_shift_settings(db)
+    if err:
+        return None, err
+
+    within, now, check_type = get_current_time(shifts)
+    if not within or check_type != "check_in":
+        return None, "Ngoài khung giờ check-in."
+    return await check_in(db, emp_id, now=now)
+
+
+async def manual_check_out(
+    db: AsyncSession,
+    emp_id: int,
+) -> tuple[AttendanceLog | None, str | None]:
+    shifts, err = await get_shift_settings(db)
+    if err:
+        return None, err
+
+    within, now, check_type = get_current_time(shifts)
+    if not within or check_type != "check_out":
+        return None, "Ngoài khung giờ check-out."
+    return await check_out(db, emp_id, now=now)
 
 
 async def log_attendance(db: AsyncSession, emp_id: int) -> str:
     """Fix #3: loads shifts from DB internally — caller must NOT pass shifts_time."""
     shifts, err = await get_shift_settings(db)
     if err:
-        return f"[ERROR] {err}"
+        return err
 
     within, now, check_type = get_current_time(shifts)
     if not within:
@@ -165,5 +222,6 @@ async def list_attendance_logs(
             .offset((page - 1) * page_size).limit(page_size)
         )
         return result.scalars().all(), total, None
-    except Exception as e:
-        return [], 0, f"[ERROR LIST ATTENDANCE]: {e}"
+    except Exception:
+        logger.exception("Listing attendance logs failed")
+        return [], 0, INTERNAL_ERROR

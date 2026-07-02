@@ -1,6 +1,8 @@
+import logging
 import uuid
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct, FilterSelector
@@ -8,6 +10,9 @@ from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 from src.modules.employees.models import Employee
 from src.platform.db.qdrant import COLLECTION_NAME
 
+logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR = "Lỗi hệ thống"
 ERR_NOT_FOUND = "EMPLOYEE_NOT_FOUND"
 ERR_MISSING_ID = "MISSING_IDENTIFIER"
 ERR_DUPLICATE = "EMPLOYEE_DUPLICATE"
@@ -50,9 +55,15 @@ async def register_employee(
         await qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
 
         return employee, None
-    except Exception as e:
+    except IntegrityError:
+        # ponytail: check-then-insert isn't atomic; a racing dup trips the
+        # UNIQUE constraint. Map to the same 409 path as the pre-check dup.
         await db.rollback()
-        return None, f"[ERROR REGISTER]: {e}"
+        return None, ERR_DUPLICATE
+    except Exception:
+        logger.exception("Employee registration failed")
+        await db.rollback()
+        return None, INTERNAL_ERROR
 
 
 async def remove_employee(
@@ -85,9 +96,10 @@ async def remove_employee(
         await db.delete(employee)
         await db.commit()
         return employee, None
-    except Exception as e:
+    except Exception:
+        logger.exception("Employee removal failed")
         await db.rollback()
-        return None, f"[ERROR REMOVE]: {e}"
+        return None, INTERNAL_ERROR
 
 
 async def list_employees(
@@ -100,8 +112,9 @@ async def list_employees(
             .offset((page - 1) * page_size).limit(page_size)
         )
         return result.scalars().all(), total, None
-    except Exception as e:
-        return [], 0, f"[ERROR LIST]: {e}"
+    except Exception:
+        logger.exception("Employee listing failed")
+        return [], 0, INTERNAL_ERROR
 
 
 async def get_employee(db: AsyncSession, emp_id: int) -> tuple[Employee, str | None]:
@@ -109,8 +122,9 @@ async def get_employee(db: AsyncSession, emp_id: int) -> tuple[Employee, str | N
         result = await db.execute(select(Employee).filter(Employee.emp_id == emp_id))
         employee = result.scalar_one_or_none()
         return (employee, None) if employee else (None, ERR_NOT_FOUND)
-    except Exception as e:
-        return None, f"[ERROR GET]: {e}"
+    except Exception:
+        logger.exception("Employee lookup failed")
+        return None, INTERNAL_ERROR
 
 
 async def search_employees_by_name(db: AsyncSession, name: str) -> tuple[list[Employee], str | None]:
@@ -119,5 +133,6 @@ async def search_employees_by_name(db: AsyncSession, name: str) -> tuple[list[Em
             select(Employee).filter(Employee.name.ilike(f"%{name}%")).order_by(Employee.emp_id)
         )
         return result.scalars().all(), None
-    except Exception as e:
-        return [], f"[ERROR SEARCH]: {e}"
+    except Exception:
+        logger.exception("Employee search failed")
+        return [], INTERNAL_ERROR

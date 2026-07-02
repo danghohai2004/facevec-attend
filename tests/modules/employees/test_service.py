@@ -1,10 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 import src.modules.attendance.models  # noqa: F401 — ensure AttendanceLog is in SQLAlchemy registry
 from src.modules.employees.models import Employee
-from src.modules.employees.service import register_employee
+from src.modules.employees.service import ERR_DUPLICATE, register_employee
 
 
 @pytest.mark.asyncio
@@ -40,4 +41,36 @@ async def test_register_employee_rejects_duplicate_without_overwriting_identity(
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
     qdrant.delete.assert_not_awaited()
+    qdrant.upsert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_register_employee_maps_unique_race_to_duplicate():
+    # Pre-check sees no existing row, but the concurrent insert trips UNIQUE.
+    no_row = MagicMock()
+    no_row.scalar_one_or_none.return_value = None
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=no_row)
+    db.add = MagicMock()
+    db.flush = AsyncMock(side_effect=IntegrityError("dup", None, Exception("unique")))
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
+
+    qdrant = MagicMock()
+    qdrant.upsert = AsyncMock()
+
+    employee, err = await register_employee(
+        db,
+        qdrant,
+        name="Bob",
+        emp_code="EMP-9",
+        embeddings=[[0.1, 0.2]],
+    )
+
+    assert employee is None
+    assert err == ERR_DUPLICATE
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
     qdrant.upsert.assert_not_awaited()

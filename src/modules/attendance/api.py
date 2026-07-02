@@ -8,7 +8,8 @@ from src.modules.attendance.schemas import (
     ShiftsTime, AttendanceLogOut, AttendanceHistoryResponse, AttendanceCheckResponse,
 )
 from src.modules.attendance.service import (
-    get_shift_settings, upsert_shift_settings, check_in, check_out, list_attendance_logs,
+    get_shift_settings, upsert_shift_settings, manual_check_in, manual_check_out,
+    list_attendance_logs,
 )
 from src.modules.employees.service import get_employee, ERR_NOT_FOUND
 
@@ -25,7 +26,7 @@ async def api_checkin(emp_id: int = Query(...), db: AsyncSession = Depends(get_d
     employee, err = await get_employee(db, emp_id)
     if err:
         raise HTTPException(404 if err == ERR_NOT_FOUND else 500, err)
-    log, err = await check_in(db, emp_id)
+    log, err = await manual_check_in(db, emp_id)
     if err:
         raise HTTPException(400, err)
     return AttendanceCheckResponse(
@@ -43,7 +44,7 @@ async def api_checkout(emp_id: int = Query(...), db: AsyncSession = Depends(get_
     employee, err = await get_employee(db, emp_id)
     if err:
         raise HTTPException(404 if err == ERR_NOT_FOUND else 500, err)
-    log, err = await check_out(db, emp_id)
+    log, err = await manual_check_out(db, emp_id)
     if err:
         raise HTTPException(400, err)
     return AttendanceCheckResponse(
@@ -61,6 +62,12 @@ async def api_history(
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            400,
+            "from_date must be before or equal to to_date.",
+        )
+
     employee, err = await get_employee(db, emp_id)
     if err:
         raise HTTPException(404 if err == ERR_NOT_FOUND else 500, err)

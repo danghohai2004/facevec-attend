@@ -283,24 +283,159 @@ grep -rn "NEXT_PUBLIC_API_KEY" frontend/src   # phải rỗng
 - **Acceptance:** Image pinned; port không expose công khai không cần thiết.
 - **Rollback risk:** Trung bình — phụ thuộc cách deploy.
 
-### Task 2.9 — Reconcile PG↔Qdrant (thay cho outbox — bản tối giản)
-- **File:** mới `scripts/reconcile_vectors.py`; log trong `src/modules/employees/service.py`
-- **Vấn đề:** Nếu Qdrant upsert/delete fail sau khi DB commit → thiếu vector (đã recoverable theo thiết kế, không phải ghost).
-- **Sửa (KHÔNG làm outbox):** Log rõ `emp_id` khi Qdrant thao tác fail. Viết script chạy tay: đọc toàn bộ employee từ Postgres, kiểm tra/khôi phục vector tương ứng trong Qdrant.
-- **Verify:** chạy script trên data lệch → đồng bộ lại.
-- **Acceptance:** Có công cụ khôi phục; không cần transaction phân tán.
-- **Rollback risk:** Thấp (script độc lập).
+## Phase 2, Task 2.9 — Qdrant vector reconciliation report (report-only)
 
-### Task 2.10 — Quyết định policy manual attendance
-- **File:** `src/modules/attendance/api.py`
-- **Vấn đề:** `api_checkin`/`api_checkout` gọi thẳng `check_in`/`check_out`, **bỏ qua** shift-window (chỉ `log_attendance` mới check). Có thể là override cố ý.
-- **Phụ thuộc:** sau Task 2.1 (Option C), `checkin`/`checkout` đã là **protected write** (backend fail-closed + gọi qua Next proxy). Task 2.10 chỉ quyết định **policy nghiệp vụ**, không đụng lại lớp auth.
-- **Sửa (chọn 1):**
-  - (a) Nếu là override admin: giữ nguyên nhưng đặt tên rõ (vd `/attendance/manual-checkin`), đã được bảo vệ bởi `require_api_key` từ Task 2.1, thêm log audit. Nếu đổi path → cập nhật allowlist proxy + `api.ts` cho khớp.
-  - (b) Nếu phải theo shift: route qua `log_attendance`.
-- **Verify:** test khớp policy đã chọn.
-- **Acceptance:** Hành vi khớp tài liệu/nghiệp vụ, không mập mờ.
-- **Rollback risk:** Thấp.
+> **Đã sửa lại (2026-07-02):** bản gốc của Task 2.9 giả định *sai* rằng có thể **khôi phục** vector Qdrant bị thiếu từ Postgres. Giả định đó không đúng với thiết kế hiện tại (xem bên dưới). Task 2.9 chuyển sang **detection / report-only**. Không đụng Phase 1 và Task 2.1–2.8 (đã accept).
+
+### Decision
+- **Chọn: Option A — Detection / report-only.**
+- **Lý do:** Postgres **không** lưu ảnh hay embedding, nên **không thể** rebuild vector tự động (đã kiểm chứng trên code, mục dưới). Option B (persist ảnh/embedding) kéo theo schema mới, quyết định privacy/security, migration, retention policy, và có thể đổi API → **quá lớn cho một fix nhỏ**; nếu cần, tách thành task riêng ở **Phase 3** (đã ghi ở Non-goals). Tuân theo "minimal safe policy".
+
+### Corrected data model assumption (vì sao giả định gốc sai)
+- `src/modules/employees/models.py`: `Employee` chỉ có `emp_id`, `emp_code`, `name`. **Không** có cột ảnh/embedding/`LargeBinary` (đã grep toàn repo — không có nguồn nào khác).
+- Ảnh upload chỉ tồn tại **trong RAM** lúc register: `src/modules/employees/api.py` đọc `file.read()` → `extract_embeddings_from_bytes()` → truyền `embeddings` cho `register_employee` → `qdrant.upsert(...)`, rồi bytes bị bỏ. Không lưu đâu cả.
+- `register_employee` commit Postgres **trước**, upsert Qdrant **sau**. Nếu upsert fail sau commit → Postgres đã có employee nhưng **không** còn dữ liệu nào để tái tạo vector.
+- ⇒ **Qdrant là nơi DUY NHẤT lưu vector.** Employee có trong PG nhưng thiếu vector Qdrant là **không khôi phục tự động được** → chỉ có thể **báo cáo** và yêu cầu operator **đăng ký lại**.
+- Chiều ngược lại phát hiện được read-only: payload Qdrant lưu `{emp_id, emp_code, name}`, nên **orphan vector** (emp_id không còn trong PG — ví dụ `remove_employee` xoá PG xong nhưng `qdrant.delete` fail) có thể dò bằng set-diff. Orphan **nguy hiểm về nghiệp vụ**: recognition có thể match một `emp_id` đã bị xoá → `log_attendance` ghi cho nhân viên không tồn tại. Vì vậy report **cả hai chiều**.
+
+### Scope
+**Implement:**
+- Script chạy tay `scripts/reconcile_vectors.py` (đọc PG + Qdrant, so sánh theo `emp_id`).
+- `pg_ids` = tập `emp_id` trong bảng `employees`; `qdrant_ids` = tập `emp_id` lấy từ payload mọi point trong collection (scroll/paginate qua `COLLECTION_NAME`).
+- **MISSING VECTOR** = `pg_ids - qdrant_ids`: in rõ `emp_id`, `emp_code`, `name`; guidance: **operator phải re-register** các nhân viên này (không thể tự phục hồi).
+- **ORPHAN VECTOR** = `qdrant_ids - pg_ids`: in rõ `emp_id`; guidance: **operator prune thủ công** (script chỉ report).
+- Exit code **≠ 0** nếu phát hiện bất kỳ inconsistency nào (để dùng được trong cron/CI sau này); exit `0` khi khớp hoàn toàn.
+- Nếu **không kết nối được / lỗi Qdrant hoặc Postgres**: fail rõ ràng — in lỗi (đã theo phong cách Task 2.6, không leak chi tiết nhạy cảm ra ngoài là không bắt buộc ở đây vì đây là CLI cho operator, nhưng phải **không** trả exit 0 giả thành công), exit ≠ 0.
+- **Read-only tuyệt đối:** không `upsert`/`delete`/`commit`/`add` gì cả.
+
+**Do NOT implement:**
+- Tự re-embed / tái tạo vector.
+- Lưu ảnh khuôn mặt.
+- Lưu embedding trong Postgres.
+- Schema migration.
+- Thay đổi API hoặc frontend.
+- Tự động xoá orphan (đó là mutation → chỉ report; nếu sau này muốn, thêm flag `--prune-orphans` ở task khác).
+
+### Files allowed to change
+- **Tạo mới:** `scripts/reconcile_vectors.py`
+- **Tạo mới:** `tests/scripts/test_reconcile_vectors.py` (thêm `tests/scripts/__init__.py` nếu bộ test cần package).
+- **Được cập nhật (housekeeping):** `docs/security/follow-ups.md` (ghi nhận công cụ + policy re-register).
+- Tái sử dụng (import, **không sửa**): `get_qdrant_client`, `COLLECTION_NAME` từ `src/platform/db/qdrant.py`; `AsyncSessionLocal` từ `src/platform/db/session.py`; `Employee` từ `src/modules/employees/models.py`.
+
+### Files NOT allowed to change
+- `src/modules/employees/models.py`, `src/modules/attendance/models.py` (không đổi schema).
+- `src/modules/employees/service.py`, `src/modules/employees/api.py` (không thêm persistence/không đổi API — logging Qdrant-fail đã có từ Task 2.6).
+- `src/platform/db/qdrant.py` (cấu hình client là Task 2.8; script chỉ import, dùng read-only).
+- `compose.yaml`, `frontend/**`, và mọi file đã accept ở Phase 1 / Task 2.1–2.8.
+- `README.md` (đang có sửa đổi ngoài phạm vi — đừng đụng).
+
+### Tests
+Mock-based (theo phong cách hiện có: `AsyncMock`/`MagicMock`, **không** cần Postgres/Qdrant thật):
+- **Khớp hoàn toàn:** mọi employee đều có vector → không báo gì, exit `0`.
+- **Thiếu vector:** một employee có trong PG, không có trong Qdrant → được report kèm `emp_id`/`emp_code`, exit ≠ 0.
+- **Orphan:** `emp_id` có trong Qdrant, không có trong PG → được report, exit ≠ 0.
+- **Qdrant lỗi/không kết nối:** raise khi đọc Qdrant → script fail rõ ràng (exit ≠ 0), **không** báo thành công giả.
+- **Read-only:** assert **không** gọi `upsert`/`delete`/`commit`/`add`/`delete` trên mock db & qdrant.
+
+### Verification commands
+- `uv run pytest tests/scripts/test_reconcile_vectors.py -q`
+- `uv run pytest -q`  *(toàn bộ suite vẫn xanh — không hồi quy Task 2.1–2.8)*
+- `git diff --check`
+- *(tùy chọn, cần service thật):* `uv run python -m scripts.reconcile_vectors` (hoặc `uv run python scripts/reconcile_vectors.py`); kiểm tra report + `echo $?` (exit code).
+
+### Non-goals
+- Không đổi schema.
+- Không lưu ảnh khuôn mặt / embedding.
+- Không tự động khôi phục vector.
+- Không tự động xoá orphan.
+- Không đổi frontend/API.
+
+### GPT 5.5 implementation instructions
+> Implement **Task 2.9 (Option A — report-only)**. Viết `scripts/reconcile_vectors.py`: dùng `asyncio.run(main())`; mở `AsyncSessionLocal()` đọc toàn bộ `emp_id` từ `Employee`; dùng `get_qdrant_client()` scroll toàn bộ point trong `COLLECTION_NAME` (phân trang tới hết) và gom `emp_id` từ payload. So sánh set: in **MISSING VECTOR** (`pg_ids - qdrant_ids`, kèm `emp_code`/`name`, ghi rõ "operator phải re-register") và **ORPHAN VECTOR** (`qdrant_ids - pg_ids`, ghi rõ "prune thủ công"). Exit `0` nếu khớp hoàn toàn, ngược lại exit ≠ 0. Lỗi kết nối/đọc PG hoặc Qdrant → in lỗi + exit ≠ 0 (không giả thành công). **Read-only:** tuyệt đối không upsert/delete/commit. Thêm `tests/scripts/test_reconcile_vectors.py` (mock `Employee` query + Qdrant scroll) cho 5 case ở mục Tests, khẳng định không có mutation. Chạy `uv run pytest -q` và `git diff --check`. **Không** đụng schema, ảnh/embedding persistence, API, frontend, hay bất kỳ file đã accept nào.
+
+## Phase 2, Task 2.10 — Enforce shift-window attendance behavior
+
+> **Đã chốt (2026-07-02):** bỏ ambiguity "chọn 1". `api_checkin`/`api_checkout` hiện gọi thẳng `check_in`/`check_out` → **bỏ qua shift-window** (chỉ `log_attendance` mới enforce). Chốt **Option B: coi đây là chấm công thường, enforce shift-window**. Không đụng Phase 1 và Task 2.1–2.9.
+
+### Decision
+- **Chọn: Option B — enforce shift-window cho manual check-in/out.**
+- **Lý do:** (1) Không thể tạo admin-override nếu không có admin auth/RBAC thật + audit log — mà project **chưa có login/RBAC** (Task 2.1 BFF/API-key chỉ chặn truy cập backend trực tiếp, **không** authorize người gọi frontend: bất kỳ ai mở được frontend đều gọi được BFF route). Tạo override "bỏ qua giờ" mà không có admin thật = lỗ hổng chính sách. (2) UI đã hiển thị khung giờ shift → kỳ vọng nghiệp vụ là *theo giờ*. Admin-override thật (Option A) **dời sang Phase 3**, chỗ đó bắt buộc có login/RBAC + audit.
+
+### Corrected product policy
+Hành động check-in/check-out qua API/frontend hiện tại là **chấm công thường (normal attendance)**, **không** phải admin override. Nó phải tuân **cùng** ràng buộc khung giờ như luồng recognition (`log_attendance`). Field "manual" trên UI chỉ là *nhập tay emp_id* (thay cho face detection), **không** phải "override luật".
+
+### Public API contract (phải giữ nguyên)
+- Response shape **không đổi**: `POST /api/attendance/checkin` và `/checkout` vẫn trả `AttendanceCheckResponse { message, check_type, log }`.
+- Khi thành công, `AttendanceCheckResponse.log` **vẫn là object `AttendanceLogOut`** (không được để `None`).
+- Business error giữ nguyên cơ chế: trả `(None, "<thông báo>")` từ service → API `raise HTTPException(400, err)`. Thêm sentinel mới **ngoài giờ** cũng đi qua path 400 này.
+- **KHÔNG** đổi `AttendanceCheckResponse`, `AttendanceLogOut`, hay contract string của `log_attendance` (pipeline recognition đang phụ thuộc — nó vẫn trả `str`).
+
+### Backend scope
+**Cách làm (tối giản, enforce trong business service — KHÔNG route qua `log_attendance`):**
+Thêm 2 wrapper mỏng trong `src/modules/attendance/service.py`, giữ `check_in`/`check_out` nguyên vẹn (để không phá test đã accept ở 2.7):
+```
+async def manual_check_in(db, emp_id) -> tuple[AttendanceLog | None, str | None]:
+    shifts, err = await get_shift_settings(db)
+    if err:
+        return None, err
+    within, now, check_type = get_current_time(shifts)
+    if not within or check_type != "check_in":
+        return None, "Ngoài khung giờ check-in."
+    return await check_in(db, emp_id, now=now)   # dùng lại logic + timestamp đã tính
+
+async def manual_check_out(db, emp_id) -> tuple[AttendanceLog | None, str | None]:
+    ... # tương tự, check_type != "check_out" → "Ngoài khung giờ check-out."
+    return await check_out(db, emp_id, now=now)
+```
+- API (`api.py`): đổi `check_in`→`manual_check_in`, `check_out`→`manual_check_out`. Phần dựng `AttendanceCheckResponse(..., log=AttendanceLogOut.model_validate(log))` **giữ nguyên** → response shape bảo toàn. Import thêm `manual_check_in`, `manual_check_out` (bỏ import trực tiếp `check_in`/`check_out` khỏi api nếu không còn dùng).
+- **Tại sao truyền `now` từ `get_current_time` vào `check_in`:** đồng nhất timestamp dùng để quyết định cửa sổ và timestamp ghi log → tránh race khi thời điểm rơi đúng ranh giới khung giờ.
+- **Ghi chú status code (chấp nhận đơn giản hoá):** `get_shift_settings` lỗi (hiếm — DB đã sống vì `get_employee` chạy trước) sẽ đi qua path 400 như business error. Đây là edge cực hiếm; không cần tách 500 riêng cho Task 2.10.
+
+**Do NOT implement:** admin override; RBAC/login; audit-log table; đổi tên route (`/checkin`,`/checkout` giữ nguyên → **allowlist proxy KHÔNG đổi**); schema migration; sửa `check_in`/`check_out`/`log_attendance` core.
+
+### Frontend scope
+- Chỉ sửa **copy gây hiểu nhầm**: `frontend/src/components/attendance/attendance-client.tsx:141` `Label` `"Employee ID (manual override)"` → `"Employee ID (manual entry)"` (hoặc `"Employee ID"`). Vì hành động không còn là "override".
+- **Không** đổi `api.ts` (route + response shape không đổi). `redirect: "manual"` trong `route.ts` là fetch-mode, **không** liên quan — đừng đụng.
+
+### Files allowed to change
+- `src/modules/attendance/service.py` (thêm 2 wrapper).
+- `src/modules/attendance/api.py` (đổi lời gọi sang wrapper; import).
+- `frontend/src/components/attendance/attendance-client.tsx` (chỉ đổi copy Label).
+- `tests/modules/attendance/test_service.py` và/hoặc mới `tests/modules/attendance/test_api.py` (thêm test — file `test_api.py` đã tồn tại từ Task 2.7).
+
+### Files NOT allowed to change
+- `src/modules/attendance/schemas.py` (giữ `AttendanceCheckResponse`/`AttendanceLogOut`).
+- `check_in`, `check_out`, `log_attendance` core logic trong `service.py` (chỉ *thêm* wrapper, không sửa).
+- `src/platform/auth.py`, `require_api_key` dependency (lớp auth 2.1 giữ nguyên).
+- `frontend/src/app/api/write/[...path]/route.ts` (allowlist), `frontend/src/lib/api.ts`.
+- `README.md`, và mọi file đã accept ở Phase 1 / Task 2.1–2.9.
+
+### Tests
+Mock-based (theo phong cách hiện có; monkeypatch `datetime`/`get_current_time` hoặc mock `get_shift_settings` để cố định khung giờ):
+- **Check-in trong khung giờ** → `manual_check_in` gọi `check_in`, trả `(log, None)`.
+- **Check-in ngoài khung giờ** → trả `(None, "Ngoài khung giờ check-in.")`, **không** gọi `check_in` (assert `check_in`/`db.add` không được gọi).
+- **Check-out trong khung giờ** → gọi `check_out`, trả `(log, None)`.
+- **Check-out ngoài khung giờ** → trả `(None, "Ngoài khung giờ check-out.")`, không gọi `check_out`.
+- **Response giữ `log`:** test API (TestClient, override `manual_check_in` trả `(fake_log, None)`, override `require_api_key`) → 200 và body có `log` là object `AttendanceLogOut` (không `None`).
+- **Auth 2.1 còn nguyên:** test API `POST /api/attendance/checkin` thiếu `X-API-Key` → 401/503 (giữ test `test_auth.py` xanh; không cần viết lại).
+- **Không hồi quy:** các test `check_in`/`check_out` trực tiếp ở `test_service.py` (2.7) vẫn xanh (vì core không đổi).
+
+### Verification commands
+- `uv run pytest tests/modules/attendance/ -q`
+- `uv run pytest -q`  *(toàn bộ suite xanh — không hồi quy 2.1–2.9)*
+- `cd frontend && npx tsc --noEmit && npm run build`  *(copy Label đổi không phá build/type)*
+- `git diff --check`
+
+### Non-goals
+- Không admin override.
+- Không RBAC/login.
+- Không audit logging.
+- Không schema migration.
+- Không đổi route / allowlist proxy.
+- Không đụng follow-up bảo mật của Task 2.1 (trừ khi trực tiếp cần — ở đây không cần).
+
+### GPT 5.5 implementation instructions
+> Implement **Task 2.10 (Option B — enforce shift-window)**. Trong `src/modules/attendance/service.py` thêm `manual_check_in(db, emp_id)` và `manual_check_out(db, emp_id)`: load `get_shift_settings`, gọi `get_current_time(shifts)`; nếu `not within` hoặc `check_type` không khớp hành động → trả `(None, "Ngoài khung giờ check-in.")` / `"...check-out."`; ngược lại `return await check_in(db, emp_id, now=now)` / `check_out(...)`. **Không** sửa `check_in`/`check_out`/`log_attendance`. Trong `api.py` đổi `api_checkin`/`api_checkout` gọi wrapper mới; **giữ nguyên** phần `AttendanceCheckResponse(..., log=AttendanceLogOut.model_validate(log))` để bảo toàn response shape. Sửa copy `attendance-client.tsx:141` `"manual override"` → `"manual entry"`. Thêm test (in-window / out-window cho cả in & out, response-có-`log`, auth-401). Chạy `uv run pytest -q`, frontend `tsc --noEmit && npm run build`, `git diff --check`. **Không** đổi schema, route, allowlist, auth, hay bất kỳ file đã accept nào.
 
 ### Task 2.11 — Chạy lại npm audit
 - **File:** `frontend/package-lock.json`
