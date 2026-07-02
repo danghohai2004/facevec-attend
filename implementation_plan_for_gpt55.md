@@ -283,13 +283,75 @@ grep -rn "NEXT_PUBLIC_API_KEY" frontend/src   # phải rỗng
 - **Acceptance:** Image pinned; port không expose công khai không cần thiết.
 - **Rollback risk:** Trung bình — phụ thuộc cách deploy.
 
-### Task 2.9 — Reconcile PG↔Qdrant (thay cho outbox — bản tối giản)
-- **File:** mới `scripts/reconcile_vectors.py`; log trong `src/modules/employees/service.py`
-- **Vấn đề:** Nếu Qdrant upsert/delete fail sau khi DB commit → thiếu vector (đã recoverable theo thiết kế, không phải ghost).
-- **Sửa (KHÔNG làm outbox):** Log rõ `emp_id` khi Qdrant thao tác fail. Viết script chạy tay: đọc toàn bộ employee từ Postgres, kiểm tra/khôi phục vector tương ứng trong Qdrant.
-- **Verify:** chạy script trên data lệch → đồng bộ lại.
-- **Acceptance:** Có công cụ khôi phục; không cần transaction phân tán.
-- **Rollback risk:** Thấp (script độc lập).
+## Phase 2, Task 2.9 — Qdrant vector reconciliation report (report-only)
+
+> **Đã sửa lại (2026-07-02):** bản gốc của Task 2.9 giả định *sai* rằng có thể **khôi phục** vector Qdrant bị thiếu từ Postgres. Giả định đó không đúng với thiết kế hiện tại (xem bên dưới). Task 2.9 chuyển sang **detection / report-only**. Không đụng Phase 1 và Task 2.1–2.8 (đã accept).
+
+### Decision
+- **Chọn: Option A — Detection / report-only.**
+- **Lý do:** Postgres **không** lưu ảnh hay embedding, nên **không thể** rebuild vector tự động (đã kiểm chứng trên code, mục dưới). Option B (persist ảnh/embedding) kéo theo schema mới, quyết định privacy/security, migration, retention policy, và có thể đổi API → **quá lớn cho một fix nhỏ**; nếu cần, tách thành task riêng ở **Phase 3** (đã ghi ở Non-goals). Tuân theo "minimal safe policy".
+
+### Corrected data model assumption (vì sao giả định gốc sai)
+- `src/modules/employees/models.py`: `Employee` chỉ có `emp_id`, `emp_code`, `name`. **Không** có cột ảnh/embedding/`LargeBinary` (đã grep toàn repo — không có nguồn nào khác).
+- Ảnh upload chỉ tồn tại **trong RAM** lúc register: `src/modules/employees/api.py` đọc `file.read()` → `extract_embeddings_from_bytes()` → truyền `embeddings` cho `register_employee` → `qdrant.upsert(...)`, rồi bytes bị bỏ. Không lưu đâu cả.
+- `register_employee` commit Postgres **trước**, upsert Qdrant **sau**. Nếu upsert fail sau commit → Postgres đã có employee nhưng **không** còn dữ liệu nào để tái tạo vector.
+- ⇒ **Qdrant là nơi DUY NHẤT lưu vector.** Employee có trong PG nhưng thiếu vector Qdrant là **không khôi phục tự động được** → chỉ có thể **báo cáo** và yêu cầu operator **đăng ký lại**.
+- Chiều ngược lại phát hiện được read-only: payload Qdrant lưu `{emp_id, emp_code, name}`, nên **orphan vector** (emp_id không còn trong PG — ví dụ `remove_employee` xoá PG xong nhưng `qdrant.delete` fail) có thể dò bằng set-diff. Orphan **nguy hiểm về nghiệp vụ**: recognition có thể match một `emp_id` đã bị xoá → `log_attendance` ghi cho nhân viên không tồn tại. Vì vậy report **cả hai chiều**.
+
+### Scope
+**Implement:**
+- Script chạy tay `scripts/reconcile_vectors.py` (đọc PG + Qdrant, so sánh theo `emp_id`).
+- `pg_ids` = tập `emp_id` trong bảng `employees`; `qdrant_ids` = tập `emp_id` lấy từ payload mọi point trong collection (scroll/paginate qua `COLLECTION_NAME`).
+- **MISSING VECTOR** = `pg_ids - qdrant_ids`: in rõ `emp_id`, `emp_code`, `name`; guidance: **operator phải re-register** các nhân viên này (không thể tự phục hồi).
+- **ORPHAN VECTOR** = `qdrant_ids - pg_ids`: in rõ `emp_id`; guidance: **operator prune thủ công** (script chỉ report).
+- Exit code **≠ 0** nếu phát hiện bất kỳ inconsistency nào (để dùng được trong cron/CI sau này); exit `0` khi khớp hoàn toàn.
+- Nếu **không kết nối được / lỗi Qdrant hoặc Postgres**: fail rõ ràng — in lỗi (đã theo phong cách Task 2.6, không leak chi tiết nhạy cảm ra ngoài là không bắt buộc ở đây vì đây là CLI cho operator, nhưng phải **không** trả exit 0 giả thành công), exit ≠ 0.
+- **Read-only tuyệt đối:** không `upsert`/`delete`/`commit`/`add` gì cả.
+
+**Do NOT implement:**
+- Tự re-embed / tái tạo vector.
+- Lưu ảnh khuôn mặt.
+- Lưu embedding trong Postgres.
+- Schema migration.
+- Thay đổi API hoặc frontend.
+- Tự động xoá orphan (đó là mutation → chỉ report; nếu sau này muốn, thêm flag `--prune-orphans` ở task khác).
+
+### Files allowed to change
+- **Tạo mới:** `scripts/reconcile_vectors.py`
+- **Tạo mới:** `tests/scripts/test_reconcile_vectors.py` (thêm `tests/scripts/__init__.py` nếu bộ test cần package).
+- **Được cập nhật (housekeeping):** `docs/security/follow-ups.md` (ghi nhận công cụ + policy re-register).
+- Tái sử dụng (import, **không sửa**): `get_qdrant_client`, `COLLECTION_NAME` từ `src/platform/db/qdrant.py`; `AsyncSessionLocal` từ `src/platform/db/session.py`; `Employee` từ `src/modules/employees/models.py`.
+
+### Files NOT allowed to change
+- `src/modules/employees/models.py`, `src/modules/attendance/models.py` (không đổi schema).
+- `src/modules/employees/service.py`, `src/modules/employees/api.py` (không thêm persistence/không đổi API — logging Qdrant-fail đã có từ Task 2.6).
+- `src/platform/db/qdrant.py` (cấu hình client là Task 2.8; script chỉ import, dùng read-only).
+- `compose.yaml`, `frontend/**`, và mọi file đã accept ở Phase 1 / Task 2.1–2.8.
+- `README.md` (đang có sửa đổi ngoài phạm vi — đừng đụng).
+
+### Tests
+Mock-based (theo phong cách hiện có: `AsyncMock`/`MagicMock`, **không** cần Postgres/Qdrant thật):
+- **Khớp hoàn toàn:** mọi employee đều có vector → không báo gì, exit `0`.
+- **Thiếu vector:** một employee có trong PG, không có trong Qdrant → được report kèm `emp_id`/`emp_code`, exit ≠ 0.
+- **Orphan:** `emp_id` có trong Qdrant, không có trong PG → được report, exit ≠ 0.
+- **Qdrant lỗi/không kết nối:** raise khi đọc Qdrant → script fail rõ ràng (exit ≠ 0), **không** báo thành công giả.
+- **Read-only:** assert **không** gọi `upsert`/`delete`/`commit`/`add`/`delete` trên mock db & qdrant.
+
+### Verification commands
+- `uv run pytest tests/scripts/test_reconcile_vectors.py -q`
+- `uv run pytest -q`  *(toàn bộ suite vẫn xanh — không hồi quy Task 2.1–2.8)*
+- `git diff --check`
+- *(tùy chọn, cần service thật):* `uv run python -m scripts.reconcile_vectors` (hoặc `uv run python scripts/reconcile_vectors.py`); kiểm tra report + `echo $?` (exit code).
+
+### Non-goals
+- Không đổi schema.
+- Không lưu ảnh khuôn mặt / embedding.
+- Không tự động khôi phục vector.
+- Không tự động xoá orphan.
+- Không đổi frontend/API.
+
+### GPT 5.5 implementation instructions
+> Implement **Task 2.9 (Option A — report-only)**. Viết `scripts/reconcile_vectors.py`: dùng `asyncio.run(main())`; mở `AsyncSessionLocal()` đọc toàn bộ `emp_id` từ `Employee`; dùng `get_qdrant_client()` scroll toàn bộ point trong `COLLECTION_NAME` (phân trang tới hết) và gom `emp_id` từ payload. So sánh set: in **MISSING VECTOR** (`pg_ids - qdrant_ids`, kèm `emp_code`/`name`, ghi rõ "operator phải re-register") và **ORPHAN VECTOR** (`qdrant_ids - pg_ids`, ghi rõ "prune thủ công"). Exit `0` nếu khớp hoàn toàn, ngược lại exit ≠ 0. Lỗi kết nối/đọc PG hoặc Qdrant → in lỗi + exit ≠ 0 (không giả thành công). **Read-only:** tuyệt đối không upsert/delete/commit. Thêm `tests/scripts/test_reconcile_vectors.py` (mock `Employee` query + Qdrant scroll) cho 5 case ở mục Tests, khẳng định không có mutation. Chạy `uv run pytest -q` và `git diff --check`. **Không** đụng schema, ảnh/embedding persistence, API, frontend, hay bất kỳ file đã accept nào.
 
 ### Task 2.10 — Quyết định policy manual attendance
 - **File:** `src/modules/attendance/api.py`
