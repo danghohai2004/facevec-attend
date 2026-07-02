@@ -149,6 +149,34 @@ async def check_out(
     return log, None
 
 
+async def manual_check_in(
+    db: AsyncSession,
+    emp_id: int,
+) -> tuple[AttendanceLog | None, str | None]:
+    shifts, err = await get_shift_settings(db)
+    if err:
+        return None, err
+
+    within, now, check_type = get_current_time(shifts)
+    if not within or check_type != "check_in":
+        return None, "Ngoài khung giờ check-in."
+    return await check_in(db, emp_id, now=now)
+
+
+async def manual_check_out(
+    db: AsyncSession,
+    emp_id: int,
+) -> tuple[AttendanceLog | None, str | None]:
+    shifts, err = await get_shift_settings(db)
+    if err:
+        return None, err
+
+    within, now, check_type = get_current_time(shifts)
+    if not within or check_type != "check_out":
+        return None, "Ngoài khung giờ check-out."
+    return await check_out(db, emp_id, now=now)
+
+
 async def log_attendance(db: AsyncSession, emp_id: int) -> str:
     """Fix #3: loads shifts from DB internally — caller must NOT pass shifts_time."""
     shifts, err = await get_shift_settings(db)

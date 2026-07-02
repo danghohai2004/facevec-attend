@@ -113,6 +113,106 @@ def test_get_current_time_uses_aware_business_timezone_for_overnight_shift(
 
 
 @pytest.mark.asyncio
+async def test_manual_check_in_inside_window_preserves_log_and_timestamp(monkeypatch):
+    db = MagicMock()
+    shifts = object()
+    now = datetime(2026, 7, 2, 8, 30, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+    log = object()
+    monkeypatch.setattr(
+        attendance_service,
+        "get_shift_settings",
+        AsyncMock(return_value=(shifts, None)),
+    )
+    get_current_time_mock = MagicMock(return_value=(True, now, "check_in"))
+    monkeypatch.setattr(
+        attendance_service,
+        "get_current_time",
+        get_current_time_mock,
+    )
+    check_in_mock = AsyncMock(return_value=(log, None))
+    monkeypatch.setattr(attendance_service, "check_in", check_in_mock)
+
+    result = await attendance_service.manual_check_in(db, emp_id=1)
+
+    assert result == (log, None)
+    get_current_time_mock.assert_called_once_with(shifts)
+    check_in_mock.assert_awaited_once_with(db, 1, now=now)
+
+
+@pytest.mark.asyncio
+async def test_manual_check_in_outside_check_in_window_is_rejected(monkeypatch):
+    db = MagicMock()
+    db.add = MagicMock()
+    monkeypatch.setattr(
+        attendance_service,
+        "get_shift_settings",
+        AsyncMock(return_value=(object(), None)),
+    )
+    monkeypatch.setattr(
+        attendance_service,
+        "get_current_time",
+        MagicMock(return_value=(True, datetime.now(), "check_out")),
+    )
+    check_in_mock = AsyncMock()
+    monkeypatch.setattr(attendance_service, "check_in", check_in_mock)
+
+    result = await attendance_service.manual_check_in(db, emp_id=1)
+
+    assert result == (None, "Ngoài khung giờ check-in.")
+    check_in_mock.assert_not_awaited()
+    db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_manual_check_out_inside_window_preserves_log_and_timestamp(monkeypatch):
+    db = MagicMock()
+    shifts = object()
+    now = datetime(2026, 7, 2, 17, 30, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+    log = object()
+    monkeypatch.setattr(
+        attendance_service,
+        "get_shift_settings",
+        AsyncMock(return_value=(shifts, None)),
+    )
+    get_current_time_mock = MagicMock(return_value=(True, now, "check_out"))
+    monkeypatch.setattr(
+        attendance_service,
+        "get_current_time",
+        get_current_time_mock,
+    )
+    check_out_mock = AsyncMock(return_value=(log, None))
+    monkeypatch.setattr(attendance_service, "check_out", check_out_mock)
+
+    result = await attendance_service.manual_check_out(db, emp_id=1)
+
+    assert result == (log, None)
+    get_current_time_mock.assert_called_once_with(shifts)
+    check_out_mock.assert_awaited_once_with(db, 1, now=now)
+
+
+@pytest.mark.asyncio
+async def test_manual_check_out_outside_check_out_window_is_rejected(monkeypatch):
+    db = MagicMock()
+    monkeypatch.setattr(
+        attendance_service,
+        "get_shift_settings",
+        AsyncMock(return_value=(object(), None)),
+    )
+    monkeypatch.setattr(
+        attendance_service,
+        "get_current_time",
+        MagicMock(return_value=(False, datetime.now(), None)),
+    )
+    check_out_mock = AsyncMock()
+    monkeypatch.setattr(attendance_service, "check_out", check_out_mock)
+
+    result = await attendance_service.manual_check_out(db, emp_id=1)
+
+    assert result == (None, "Ngoài khung giờ check-out.")
+    check_out_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_check_in_persists_naive_local_time_and_business_date():
     db = MagicMock()
     result = MagicMock()

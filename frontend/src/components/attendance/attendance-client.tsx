@@ -138,7 +138,7 @@ export function AttendanceClient() {
               </div>
 
               <div className="space-y-2">
-                <Label>Employee ID (manual override)</Label>
+                <Label>Employee ID (manual entry)</Label>
                 <Input
                   value={manualEmpId}
                   onChange={(event) => setManualEmpId(event.target.value)}
