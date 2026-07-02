@@ -353,16 +353,89 @@ Mock-based (theo phong cách hiện có: `AsyncMock`/`MagicMock`, **không** c�
 ### GPT 5.5 implementation instructions
 > Implement **Task 2.9 (Option A — report-only)**. Viết `scripts/reconcile_vectors.py`: dùng `asyncio.run(main())`; mở `AsyncSessionLocal()` đọc toàn bộ `emp_id` từ `Employee`; dùng `get_qdrant_client()` scroll toàn bộ point trong `COLLECTION_NAME` (phân trang tới hết) và gom `emp_id` từ payload. So sánh set: in **MISSING VECTOR** (`pg_ids - qdrant_ids`, kèm `emp_code`/`name`, ghi rõ "operator phải re-register") và **ORPHAN VECTOR** (`qdrant_ids - pg_ids`, ghi rõ "prune thủ công"). Exit `0` nếu khớp hoàn toàn, ngược lại exit ≠ 0. Lỗi kết nối/đọc PG hoặc Qdrant → in lỗi + exit ≠ 0 (không giả thành công). **Read-only:** tuyệt đối không upsert/delete/commit. Thêm `tests/scripts/test_reconcile_vectors.py` (mock `Employee` query + Qdrant scroll) cho 5 case ở mục Tests, khẳng định không có mutation. Chạy `uv run pytest -q` và `git diff --check`. **Không** đụng schema, ảnh/embedding persistence, API, frontend, hay bất kỳ file đã accept nào.
 
-### Task 2.10 — Quyết định policy manual attendance
-- **File:** `src/modules/attendance/api.py`
-- **Vấn đề:** `api_checkin`/`api_checkout` gọi thẳng `check_in`/`check_out`, **bỏ qua** shift-window (chỉ `log_attendance` mới check). Có thể là override cố ý.
-- **Phụ thuộc:** sau Task 2.1 (Option C), `checkin`/`checkout` đã là **protected write** (backend fail-closed + gọi qua Next proxy). Task 2.10 chỉ quyết định **policy nghiệp vụ**, không đụng lại lớp auth.
-- **Sửa (chọn 1):**
-  - (a) Nếu là override admin: giữ nguyên nhưng đặt tên rõ (vd `/attendance/manual-checkin`), đã được bảo vệ bởi `require_api_key` từ Task 2.1, thêm log audit. Nếu đổi path → cập nhật allowlist proxy + `api.ts` cho khớp.
-  - (b) Nếu phải theo shift: route qua `log_attendance`.
-- **Verify:** test khớp policy đã chọn.
-- **Acceptance:** Hành vi khớp tài liệu/nghiệp vụ, không mập mờ.
-- **Rollback risk:** Thấp.
+## Phase 2, Task 2.10 — Enforce shift-window attendance behavior
+
+> **Đã chốt (2026-07-02):** bỏ ambiguity "chọn 1". `api_checkin`/`api_checkout` hiện gọi thẳng `check_in`/`check_out` → **bỏ qua shift-window** (chỉ `log_attendance` mới enforce). Chốt **Option B: coi đây là chấm công thường, enforce shift-window**. Không đụng Phase 1 và Task 2.1–2.9.
+
+### Decision
+- **Chọn: Option B — enforce shift-window cho manual check-in/out.**
+- **Lý do:** (1) Không thể tạo admin-override nếu không có admin auth/RBAC thật + audit log — mà project **chưa có login/RBAC** (Task 2.1 BFF/API-key chỉ chặn truy cập backend trực tiếp, **không** authorize người gọi frontend: bất kỳ ai mở được frontend đều gọi được BFF route). Tạo override "bỏ qua giờ" mà không có admin thật = lỗ hổng chính sách. (2) UI đã hiển thị khung giờ shift → kỳ vọng nghiệp vụ là *theo giờ*. Admin-override thật (Option A) **dời sang Phase 3**, chỗ đó bắt buộc có login/RBAC + audit.
+
+### Corrected product policy
+Hành động check-in/check-out qua API/frontend hiện tại là **chấm công thường (normal attendance)**, **không** phải admin override. Nó phải tuân **cùng** ràng buộc khung giờ như luồng recognition (`log_attendance`). Field "manual" trên UI chỉ là *nhập tay emp_id* (thay cho face detection), **không** phải "override luật".
+
+### Public API contract (phải giữ nguyên)
+- Response shape **không đổi**: `POST /api/attendance/checkin` và `/checkout` vẫn trả `AttendanceCheckResponse { message, check_type, log }`.
+- Khi thành công, `AttendanceCheckResponse.log` **vẫn là object `AttendanceLogOut`** (không được để `None`).
+- Business error giữ nguyên cơ chế: trả `(None, "<thông báo>")` từ service → API `raise HTTPException(400, err)`. Thêm sentinel mới **ngoài giờ** cũng đi qua path 400 này.
+- **KHÔNG** đổi `AttendanceCheckResponse`, `AttendanceLogOut`, hay contract string của `log_attendance` (pipeline recognition đang phụ thuộc — nó vẫn trả `str`).
+
+### Backend scope
+**Cách làm (tối giản, enforce trong business service — KHÔNG route qua `log_attendance`):**
+Thêm 2 wrapper mỏng trong `src/modules/attendance/service.py`, giữ `check_in`/`check_out` nguyên vẹn (để không phá test đã accept ở 2.7):
+```
+async def manual_check_in(db, emp_id) -> tuple[AttendanceLog | None, str | None]:
+    shifts, err = await get_shift_settings(db)
+    if err:
+        return None, err
+    within, now, check_type = get_current_time(shifts)
+    if not within or check_type != "check_in":
+        return None, "Ngoài khung giờ check-in."
+    return await check_in(db, emp_id, now=now)   # dùng lại logic + timestamp đã tính
+
+async def manual_check_out(db, emp_id) -> tuple[AttendanceLog | None, str | None]:
+    ... # tương tự, check_type != "check_out" → "Ngoài khung giờ check-out."
+    return await check_out(db, emp_id, now=now)
+```
+- API (`api.py`): đổi `check_in`→`manual_check_in`, `check_out`→`manual_check_out`. Phần dựng `AttendanceCheckResponse(..., log=AttendanceLogOut.model_validate(log))` **giữ nguyên** → response shape bảo toàn. Import thêm `manual_check_in`, `manual_check_out` (bỏ import trực tiếp `check_in`/`check_out` khỏi api nếu không còn dùng).
+- **Tại sao truyền `now` từ `get_current_time` vào `check_in`:** đồng nhất timestamp dùng để quyết định cửa sổ và timestamp ghi log → tránh race khi thời điểm rơi đúng ranh giới khung giờ.
+- **Ghi chú status code (chấp nhận đơn giản hoá):** `get_shift_settings` lỗi (hiếm — DB đã sống vì `get_employee` chạy trước) sẽ đi qua path 400 như business error. Đây là edge cực hiếm; không cần tách 500 riêng cho Task 2.10.
+
+**Do NOT implement:** admin override; RBAC/login; audit-log table; đổi tên route (`/checkin`,`/checkout` giữ nguyên → **allowlist proxy KHÔNG đổi**); schema migration; sửa `check_in`/`check_out`/`log_attendance` core.
+
+### Frontend scope
+- Chỉ sửa **copy gây hiểu nhầm**: `frontend/src/components/attendance/attendance-client.tsx:141` `Label` `"Employee ID (manual override)"` → `"Employee ID (manual entry)"` (hoặc `"Employee ID"`). Vì hành động không còn là "override".
+- **Không** đổi `api.ts` (route + response shape không đổi). `redirect: "manual"` trong `route.ts` là fetch-mode, **không** liên quan — đừng đụng.
+
+### Files allowed to change
+- `src/modules/attendance/service.py` (thêm 2 wrapper).
+- `src/modules/attendance/api.py` (đổi lời gọi sang wrapper; import).
+- `frontend/src/components/attendance/attendance-client.tsx` (chỉ đổi copy Label).
+- `tests/modules/attendance/test_service.py` và/hoặc mới `tests/modules/attendance/test_api.py` (thêm test — file `test_api.py` đã tồn tại từ Task 2.7).
+
+### Files NOT allowed to change
+- `src/modules/attendance/schemas.py` (giữ `AttendanceCheckResponse`/`AttendanceLogOut`).
+- `check_in`, `check_out`, `log_attendance` core logic trong `service.py` (chỉ *thêm* wrapper, không sửa).
+- `src/platform/auth.py`, `require_api_key` dependency (lớp auth 2.1 giữ nguyên).
+- `frontend/src/app/api/write/[...path]/route.ts` (allowlist), `frontend/src/lib/api.ts`.
+- `README.md`, và mọi file đã accept ở Phase 1 / Task 2.1–2.9.
+
+### Tests
+Mock-based (theo phong cách hiện có; monkeypatch `datetime`/`get_current_time` hoặc mock `get_shift_settings` để cố định khung giờ):
+- **Check-in trong khung giờ** → `manual_check_in` gọi `check_in`, trả `(log, None)`.
+- **Check-in ngoài khung giờ** → trả `(None, "Ngoài khung giờ check-in.")`, **không** gọi `check_in` (assert `check_in`/`db.add` không được gọi).
+- **Check-out trong khung giờ** → gọi `check_out`, trả `(log, None)`.
+- **Check-out ngoài khung giờ** → trả `(None, "Ngoài khung giờ check-out.")`, không gọi `check_out`.
+- **Response giữ `log`:** test API (TestClient, override `manual_check_in` trả `(fake_log, None)`, override `require_api_key`) → 200 và body có `log` là object `AttendanceLogOut` (không `None`).
+- **Auth 2.1 còn nguyên:** test API `POST /api/attendance/checkin` thiếu `X-API-Key` → 401/503 (giữ test `test_auth.py` xanh; không cần viết lại).
+- **Không hồi quy:** các test `check_in`/`check_out` trực tiếp ở `test_service.py` (2.7) vẫn xanh (vì core không đổi).
+
+### Verification commands
+- `uv run pytest tests/modules/attendance/ -q`
+- `uv run pytest -q`  *(toàn bộ suite xanh — không hồi quy 2.1–2.9)*
+- `cd frontend && npx tsc --noEmit && npm run build`  *(copy Label đổi không phá build/type)*
+- `git diff --check`
+
+### Non-goals
+- Không admin override.
+- Không RBAC/login.
+- Không audit logging.
+- Không schema migration.
+- Không đổi route / allowlist proxy.
+- Không đụng follow-up bảo mật của Task 2.1 (trừ khi trực tiếp cần — ở đây không cần).
+
+### GPT 5.5 implementation instructions
+> Implement **Task 2.10 (Option B — enforce shift-window)**. Trong `src/modules/attendance/service.py` thêm `manual_check_in(db, emp_id)` và `manual_check_out(db, emp_id)`: load `get_shift_settings`, gọi `get_current_time(shifts)`; nếu `not within` hoặc `check_type` không khớp hành động → trả `(None, "Ngoài khung giờ check-in.")` / `"...check-out."`; ngược lại `return await check_in(db, emp_id, now=now)` / `check_out(...)`. **Không** sửa `check_in`/`check_out`/`log_attendance`. Trong `api.py` đổi `api_checkin`/`api_checkout` gọi wrapper mới; **giữ nguyên** phần `AttendanceCheckResponse(..., log=AttendanceLogOut.model_validate(log))` để bảo toàn response shape. Sửa copy `attendance-client.tsx:141` `"manual override"` → `"manual entry"`. Thêm test (in-window / out-window cho cả in & out, response-có-`log`, auth-401). Chạy `uv run pytest -q`, frontend `tsc --noEmit && npm run build`, `git diff --check`. **Không** đổi schema, route, allowlist, auth, hay bất kỳ file đã accept nào.
 
 ### Task 2.11 — Chạy lại npm audit
 - **File:** `frontend/package-lock.json`
