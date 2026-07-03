@@ -95,16 +95,17 @@ function ShiftWindowBanner({ kind }: { kind: AttendanceKind }) {
   );
 }
 
-/** draw_bbox-style corner brackets. Rendered inside a positioned box. */
+/** Corner brackets around the tracked face. Square and white — industrial,
+ *  not HUD. Rendered inside a positioned box. */
 function Brackets({ size = 28 }: { size?: number }) {
-  const c = "absolute border-amber-300";
+  const c = "absolute border-white";
   const s = { width: size, height: size };
   return (
     <>
-      <span className={`${c} left-0 top-0 rounded-tl-md border-l-[3px] border-t-[3px]`} style={s} />
-      <span className={`${c} right-0 top-0 rounded-tr-md border-r-[3px] border-t-[3px]`} style={s} />
-      <span className={`${c} bottom-0 left-0 rounded-bl-md border-b-[3px] border-l-[3px]`} style={s} />
-      <span className={`${c} bottom-0 right-0 rounded-br-md border-b-[3px] border-r-[3px]`} style={s} />
+      <span className={`${c} left-0 top-0 border-l-[3px] border-t-[3px]`} style={s} />
+      <span className={`${c} right-0 top-0 border-r-[3px] border-t-[3px]`} style={s} />
+      <span className={`${c} bottom-0 left-0 border-b-[3px] border-l-[3px]`} style={s} />
+      <span className={`${c} bottom-0 right-0 border-b-[3px] border-r-[3px]`} style={s} />
     </>
   );
 }
