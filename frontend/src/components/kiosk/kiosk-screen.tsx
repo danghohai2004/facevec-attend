@@ -1,37 +1,32 @@
 "use client";
 
 import * as React from "react";
-import {
-  CameraOff,
-  CheckCircle2,
-  Loader2,
-  ScanFace,
-  WifiOff,
-} from "lucide-react";
+import { AlertTriangle, CameraOff, CheckCircle2, Loader2, WifiOff } from "lucide-react";
 import { useRecognition } from "@/components/kiosk/use-recognition";
+import { useFaceTracker } from "@/components/kiosk/use-face-tracker";
+import type { FaceBox as FaceBoxCoords } from "@/lib/kiosk";
 
-// The kiosk is theme-locked dark regardless of the dashboard's light/dark
-// setting, so colors are hardcoded (zinc neutrals + a single emerald accent).
+// Fullscreen industrial attendance terminal: clear camera feed, a real-time
+// bounding box tracking the face (MediaPipe in-browser), high-contrast status.
+// Theme-locked dark chrome; the camera image is shown bright (no vignette).
 
 function Clock() {
-  // Null until the client ticks — keeps SSR output time-free (no hydration
-  // mismatch) and the first tick lands within 1s, behind the init overlay.
   const [now, setNow] = React.useState<Date | null>(null);
   React.useEffect(() => {
+    // Tick each minute-aligned; 1s interval is fine and keeps it simple.
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-  if (!now) return <div className="h-[4.25rem]" aria-hidden />; // reserve space, avoid CLS
+  if (!now) return <div className="h-14 w-44" aria-hidden />; // reserve space
   return (
-    <div className="text-center">
-      <div className="font-mono text-4xl font-semibold tabular-nums tracking-tight text-white sm:text-5xl">
+    <div className="text-right">
+      <div className="font-mono text-2xl font-semibold tabular-nums leading-none text-white sm:text-3xl">
         {now.toLocaleTimeString("vi-VN", {
           hour: "2-digit",
           minute: "2-digit",
-          second: "2-digit",
         })}
       </div>
-      <div className="mt-1 text-sm text-zinc-400">
+      <div className="mt-2 text-base font-medium text-zinc-200 sm:text-lg">
         {now.toLocaleDateString("vi-VN", {
           weekday: "long",
           day: "2-digit",
@@ -43,34 +38,101 @@ function Clock() {
   );
 }
 
-function CornerFrame({ active }: { active: boolean }) {
-  const stroke = active ? "border-emerald-400" : "border-zinc-600";
-  const base = "absolute h-14 w-14 transition-colors duration-500";
+/** draw_bbox-style corner brackets. Rendered inside a positioned box. */
+function Brackets({ size = 28 }: { size?: number }) {
+  const c = "absolute border-amber-300";
+  const s = { width: size, height: size };
   return (
     <>
-      <div className={`${base} left-0 top-0 rounded-tl-3xl border-l-2 border-t-2 ${stroke}`} />
-      <div className={`${base} right-0 top-0 rounded-tr-3xl border-r-2 border-t-2 ${stroke}`} />
-      <div className={`${base} bottom-0 left-0 rounded-bl-3xl border-b-2 border-l-2 ${stroke}`} />
-      <div className={`${base} bottom-0 right-0 rounded-br-3xl border-b-2 border-r-2 ${stroke}`} />
+      <span className={`${c} left-0 top-0 rounded-tl-md border-l-[3px] border-t-[3px]`} style={s} />
+      <span className={`${c} right-0 top-0 rounded-tr-md border-r-[3px] border-t-[3px]`} style={s} />
+      <span className={`${c} bottom-0 left-0 rounded-bl-md border-b-[3px] border-l-[3px]`} style={s} />
+      <span className={`${c} bottom-0 right-0 rounded-br-md border-b-[3px] border-r-[3px]`} style={s} />
     </>
+  );
+}
+
+/**
+ * Fallback box (used only if the in-browser tracker fails to init): draws the
+ * backend model bbox. Same object-cover + mirror math, but updates ~1×/sec.
+ */
+function ServerFaceBox({
+  videoRef,
+  bbox,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  bbox: FaceBoxCoords;
+}) {
+  const [rect, setRect] = React.useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  React.useEffect(() => {
+    let raf = 0;
+    const compute = () => {
+      const el = videoRef.current;
+      if (!el) return setRect(null);
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      const fw = el.videoWidth;
+      const fh = el.videoHeight;
+      if (!fw || !fh || !cw || !ch) return setRect(null);
+      const scale = Math.max(cw / fw, ch / fh);
+      const offX = (cw - fw * scale) / 2;
+      const offY = (ch - fh * scale) / 2;
+      const [nx1, ny1, nx2, ny2] = bbox;
+      const px1 = offX + nx1 * fw * scale;
+      const px2 = offX + nx2 * fw * scale;
+      const py1 = offY + ny1 * fh * scale;
+      const py2 = offY + ny2 * fh * scale;
+      setRect({ left: cw - px2, top: py1, width: px2 - px1, height: py2 - py1 });
+    };
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(compute);
+    };
+    schedule();
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [videoRef, bbox]);
+
+  if (!rect) return null;
+  const corner = Math.max(16, Math.min(44, Math.min(rect.width, rect.height) * 0.22));
+  return (
+    <div
+      className="pointer-events-none absolute z-10 transition-all duration-200 ease-out motion-reduce:transition-none"
+      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+      aria-hidden
+    >
+      <Brackets size={corner} />
+    </div>
   );
 }
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-zinc-950/85 px-6 text-center backdrop-blur-sm animate-in fade-in duration-300">
+    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-zinc-950/90 px-6 text-center animate-in fade-in duration-300">
       {children}
     </div>
   );
 }
 
 export function KioskScreen() {
-  const { videoRef, phase, greeting, hint } = useRecognition();
+  const { videoRef, phase, greeting, hint, faceBox } = useRecognition();
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  const trackerStatus = useFaceTracker(videoRef, boxRef);
   const scanning = phase === "scanning";
+  const showServerBox = trackerStatus === "failed" && faceBox && phase !== "recognized";
 
   return (
     <main className="relative min-h-[100dvh] overflow-hidden bg-zinc-950 text-white">
-      {/* Live camera fills the screen, mirrored like a selfie view. */}
+      {/* Live camera fills the screen, shown bright and mirrored (selfie view). */}
       <video
         ref={videoRef}
         autoPlay
@@ -78,42 +140,50 @@ export function KioskScreen() {
         playsInline
         className="absolute inset-0 h-full w-full -scale-x-100 object-cover"
       />
-      {/* Cinematic scrim so overlaid text stays legible over any background. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/70 via-zinc-950/30 to-zinc-950/80" />
-      <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_180px_60px_rgba(0,0,0,0.7)]" />
+      {/* Light gradients only where text sits — keep the face itself clear. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-zinc-950/85 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-zinc-950/90 to-transparent" />
 
-      {/* Header: brand + clock */}
-      <header className="absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-4 px-6 pt-8">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-[0.2em] text-zinc-300">
-          <ScanFace className="h-5 w-5 text-emerald-400" aria-hidden />
-          Điểm danh khuôn mặt
-        </div>
+      {/* Real-time in-browser face box (positioned imperatively by the tracker). */}
+      <div ref={boxRef} className="pointer-events-none absolute z-10 hidden" aria-hidden>
+        <Brackets />
+      </div>
+
+      {/* Fallback box from the backend model if the in-browser tracker failed. */}
+      {showServerBox && <ServerFaceBox videoRef={videoRef} bbox={faceBox} />}
+
+      {/* Header: clock only (top-right) */}
+      <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-end px-8 pt-6">
         <Clock />
       </header>
 
-      {/* Scan reticle */}
-      <div className="absolute inset-0 z-10 flex items-center justify-center">
-        <div className="relative aspect-[3/4] w-[min(70vw,420px)]">
-          <CornerFrame active={scanning} />
-          {scanning && (
-            <div className="absolute inset-6 rounded-2xl border border-emerald-400/40 animate-pulse motion-reduce:animate-none" />
+      {/* Bottom status bar. A hint means something needs attention → small red
+          warning pill; otherwise the big neutral guidance prompt. */}
+      {scanning && (
+        <div
+          className="absolute inset-x-0 bottom-0 z-20 flex justify-center px-6 pb-10"
+          aria-live="polite"
+        >
+          {hint ? (
+            <div className="flex items-center gap-2 rounded-lg bg-red-950/70 px-4 py-2 backdrop-blur-md ring-1 ring-red-500/40">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" aria-hidden />
+              <p className="text-sm font-medium text-red-100 sm:text-base">{hint}</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-2xl bg-zinc-950/70 px-7 py-4 backdrop-blur-md ring-1 ring-white/10">
+              <span
+                className="h-2.5 w-2.5 rounded-full bg-emerald-400 motion-safe:animate-pulse"
+                aria-hidden
+              />
+              <p className="text-xl font-medium text-white sm:text-2xl">
+                Đưa khuôn mặt vào giữa màn hình để điểm danh
+              </p>
+            </div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Scanning hint / prompt */}
-      <div
-        className="absolute inset-x-0 bottom-0 z-10 flex justify-center px-6 pb-12"
-        aria-live="polite"
-      >
-        <p className="rounded-full bg-zinc-950/60 px-5 py-2 text-base text-zinc-200 backdrop-blur-sm">
-          {scanning
-            ? (hint ?? "Vui lòng nhìn vào camera để điểm danh")
-            : " "}
-        </p>
-      </div>
-
-      {/* Greeting on a successful recognition (shown ~5s, capture paused) */}
+      {/* Greeting on a successful recognition (~5s, capture paused) */}
       {phase === "recognized" && greeting && (
         <Overlay>
           <CheckCircle2
@@ -126,7 +196,7 @@ export function KioskScreen() {
               {greeting.name}
             </p>
           </div>
-          <p className="text-2xl font-medium text-emerald-300">
+          <p className="rounded-full bg-emerald-500/15 px-6 py-2 text-2xl font-medium text-emerald-300 ring-1 ring-emerald-400/30">
             {greeting.message}
           </p>
         </Overlay>
@@ -158,9 +228,7 @@ export function KioskScreen() {
         <Overlay>
           <WifiOff className="h-16 w-16 text-amber-400" aria-hidden />
           <div>
-            <p className="text-2xl font-medium text-zinc-200">
-              Mất kết nối máy chủ
-            </p>
+            <p className="text-2xl font-medium text-zinc-200">Mất kết nối máy chủ</p>
             <p className="mt-2 flex items-center justify-center gap-2 text-sm text-zinc-400">
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
               Đang kết nối lại…

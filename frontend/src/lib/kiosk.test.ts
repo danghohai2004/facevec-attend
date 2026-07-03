@@ -21,6 +21,15 @@ s = reduceKiosk(s, { type: "ws_open" });
 assert.equal(kioskPhase(s), "scanning");
 assert.equal(shouldCapture(s), true);
 
+// An unknown result carries the model bbox → the face box is drawn.
+s = reduceKiosk(s, {
+  type: "message",
+  message: { status: "unknown", bbox: [0.3, 0.2, 0.6, 0.7], timestamp: "t" },
+});
+assert.deepEqual(s.faceBox, [0.3, 0.2, 0.6, 0.7]);
+// no_face clears the box.
+assert.equal(reduceKiosk(s, { type: "message", message: { status: "no_face", timestamp: "t" } }).faceBox, null);
+
 // A recognition greeting pauses capture and shows Vietnamese copy.
 s = reduceKiosk(s, {
   type: "message",
@@ -29,6 +38,7 @@ s = reduceKiosk(s, {
     emp_id: 1,
     name: "Trần Minh",
     attendance: "Check in successful",
+    bbox: [0.3, 0.2, 0.6, 0.7],
     timestamp: "t",
   },
 });
@@ -37,12 +47,16 @@ assert.equal(shouldCapture(s), false);
 assert.deepEqual(s.greeting, { name: "Trần Minh", message: "Đã chấm công vào ca" });
 
 // In-flight results are ignored while the greeting is up (no flicker).
-const held = reduceKiosk(s, { type: "message", message: { status: "unknown", timestamp: "t" } });
+const held = reduceKiosk(s, {
+  type: "message",
+  message: { status: "unknown", bbox: [0, 0, 1, 1], timestamp: "t" },
+});
 assert.equal(held.greeting?.name, "Trần Minh");
 
-// Greeting clears → back to scanning.
+// Greeting clears → back to scanning, box cleared.
 s = reduceKiosk(s, { type: "greeting_done" });
 assert.equal(kioskPhase(s), "scanning");
+assert.equal(s.faceBox, null);
 
 // Camera error dominates every other state.
 assert.equal(kioskPhase(reduceKiosk(s, { type: "camera_error" })), "camera_error");

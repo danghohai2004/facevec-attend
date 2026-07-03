@@ -21,13 +21,37 @@ export type EmployeeList = {
   page_size: number;
 };
 
-export type AttendanceRecord = {
-  id: string;
-  emp_id: string;
-  name?: string;
-  date: string;
-  check_in?: string;
-  check_out?: string;
-  working_hours?: number;
-  status?: "checkin" | "checkout";
+export type SummaryDeltas = {
+  todaysAttendance: number | null;
+  averageWorkingHours: number | null;
+  onTimeRate: number | null;
+};
+
+export type SummaryStats = {
+  totalEmployees: number;
+  todaysAttendance: number;
+  averageWorkingHours: number;
+  onTimeRate: number;
+  deltas: SummaryDeltas;
+};
+
+export type MonthlyStat = {
+  month: number;
+  attendance: number;
+  workingHours: number;
+  averageHours: number;
+};
+
+export type MonthlyStats = {
+  availableYears: number[];
+  items: MonthlyStat[];
+};
+
+export type DailyStat = {
+  day: number;
+  averageHours: number;
+};
+
+export type DailyStats = {
+  items: DailyStat[];
 };

@@ -1,4 +1,4 @@
-# Facial Recognition Attendance System Using Embeddings
+r# Facial Recognition Attendance System Using Embeddings
 
 In many enterprises, schools, and organizations, attendance tracking still relies on magnetic cards, fingerprint scanners, or manual entry. These approaches suffer from attendance fraud, slow operation, poor scalability, and weak integration with modern systems.
 

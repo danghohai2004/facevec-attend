@@ -16,7 +16,6 @@ import { navItems } from "@/components/layout/nav-items";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard & Analytics",
-  "/attendance": "Attendance Monitoring",
   "/employees": "Employee Management",
   "/shifts": "Shift Settings",
 };
@@ -26,7 +25,7 @@ export function Topbar() {
   const title = pageTitles[pathname] ?? "Face Recognition Attendance";
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-background/80 px-6 backdrop-blur">
+    <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b-2 border-foreground bg-background px-6">
       <div className="flex items-center gap-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -35,26 +34,25 @@ export function Topbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            {navItems
-              .filter((item) => !item.disabled)
-              .map((item) => (
-                <DropdownMenuItem key={item.title} asChild>
-                  <Link href={item.href}>{item.title}</Link>
-                </DropdownMenuItem>
-              ))}
+            {navItems.map((item) => (
+              <DropdownMenuItem key={item.title} asChild>
+                <Link href={item.href}>{item.title}</Link>
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
         <div>
-          <p className="text-sm font-semibold text-foreground">{title}</p>
-          <p className="text-xs text-muted-foreground">
-            Real-time face recognition insights
+          <p className="text-sm font-black tracking-tight text-foreground uppercase">
+            {title}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-3">
         <ModeToggle />
         <Avatar>
-          <AvatarFallback>AD</AvatarFallback>
+          <AvatarFallback className="bg-primary text-primary-foreground">
+            AD
+          </AvatarFallback>
         </Avatar>
       </div>
     </header>

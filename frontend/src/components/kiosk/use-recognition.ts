@@ -153,5 +153,6 @@ export function useRecognition() {
     phase: kioskPhase(state),
     greeting: state.greeting,
     hint: state.hint,
+    faceBox: state.faceBox,
   };
 }

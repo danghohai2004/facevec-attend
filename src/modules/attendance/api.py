@@ -5,15 +5,67 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.platform.auth import require_api_key
 from src.platform.db.session import get_db
 from src.modules.attendance.schemas import (
-    ShiftsTime, AttendanceLogOut, AttendanceHistoryResponse, AttendanceCheckResponse,
+    AttendanceCheckResponse,
+    AttendanceHistoryResponse,
+    AttendanceLogOut,
+    DailyStatsResponse,
+    MonthlyStatsResponse,
+    ShiftsTime,
+    SummaryStatsResponse,
 )
 from src.modules.attendance.service import (
-    get_shift_settings, upsert_shift_settings, manual_check_in, manual_check_out,
+    get_daily_stats,
+    get_monthly_stats,
+    get_shift_settings,
+    get_summary_stats,
     list_attendance_logs,
+    manual_check_in,
+    manual_check_out,
+    upsert_shift_settings,
 )
 from src.modules.employees.service import get_employee, ERR_NOT_FOUND
 
 router = APIRouter(prefix="/api", tags=["Attendance"])
+
+
+@router.get(
+    "/attendance/summary",
+    response_model=SummaryStatsResponse,
+)
+async def api_summary_stats(db: AsyncSession = Depends(get_db)):
+    stats, err = await get_summary_stats(db)
+    if err:
+        raise HTTPException(500, err)
+    return stats
+
+
+@router.get(
+    "/attendance/monthly",
+    response_model=MonthlyStatsResponse,
+)
+async def api_monthly_stats(
+    year: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    stats, err = await get_monthly_stats(db, year)
+    if err:
+        raise HTTPException(500, err)
+    return stats
+
+
+@router.get(
+    "/attendance/daily",
+    response_model=DailyStatsResponse,
+)
+async def api_daily_stats(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+):
+    stats, err = await get_daily_stats(db, year, month)
+    if err:
+        raise HTTPException(500, err)
+    return stats
 
 
 @router.post(

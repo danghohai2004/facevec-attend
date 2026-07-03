@@ -2,6 +2,9 @@
 // Vietnamese copy shown to the person standing at the camera. No DOM here so it
 // stays trivially testable — see kiosk.test.ts for the reducer self-check.
 
+/** Normalized face box [x1, y1, x2, y2] in 0..1, from the model (un-mirrored). */
+export type FaceBox = [number, number, number, number];
+
 /** Messages the backend pushes over /ws/recognition/{client_id} (see pipeline.py). */
 export type RecognitionMessage =
   | {
@@ -9,9 +12,10 @@ export type RecognitionMessage =
       emp_id: number;
       name: string;
       attendance: string;
+      bbox: FaceBox;
       timestamp: string;
     }
-  | { status: "unknown"; timestamp: string }
+  | { status: "unknown"; bbox: FaceBox; timestamp: string }
   | { status: "no_face"; timestamp: string }
   | { status: "spoof"; timestamp: string }
   | { status: "error"; detail: string };
@@ -26,6 +30,8 @@ export interface KioskState {
   socket: "connecting" | "open" | "closed";
   greeting: { name: string; message: string } | null;
   hint: string | null;
+  // Live model bbox to draw over the detected face, or null when no face.
+  faceBox: FaceBox | null;
 }
 
 export type KioskPhase =
@@ -49,6 +55,7 @@ export const initialKioskState: KioskState = {
   socket: "connecting",
   greeting: null,
   hint: null,
+  faceBox: null,
 };
 
 /** Backend attendance strings (log_attendance) → friendly Vietnamese kiosk copy. */
@@ -83,12 +90,13 @@ export function reduceKiosk(state: KioskState, event: KioskEvent): KioskState {
     case "ws_close":
       return { ...state, socket: "closed" };
     case "greeting_done":
-      return { ...state, greeting: null, hint: null };
+      return { ...state, greeting: null, hint: null, faceBox: null };
     case "message": {
       // While a greeting is showing we've paused capture; ignore any in-flight
       // result so a stale "unknown" can't flicker over the welcome message.
       if (state.greeting) return state;
       const msg = event.message;
+      const bbox = "bbox" in msg ? msg.bbox : null;
       switch (msg.status) {
         case "recognized":
           return {
@@ -98,15 +106,20 @@ export function reduceKiosk(state: KioskState, event: KioskEvent): KioskState {
               message: attendanceMessage(msg.attendance),
             },
             hint: null,
+            faceBox: bbox,
           };
         case "unknown":
-          return { ...state, hint: "Không nhận diện được khuôn mặt" };
+          return { ...state, hint: "Không tìm thấy khuôn mặt", faceBox: bbox };
         case "spoof":
-          return { ...state, hint: "Vui lòng nhìn thẳng vào camera" };
+          return { ...state, hint: "Vui lòng nhìn thẳng vào camera", faceBox: null };
         case "no_face":
-          return { ...state, hint: null };
+          return { ...state, hint: null, faceBox: null };
         case "error":
-          return { ...state, hint: "Hệ thống đang bận, thử lại sau giây lát" };
+          return {
+            ...state,
+            hint: "Hệ thống đang bận, thử lại sau giây lát",
+            faceBox: null,
+          };
         default:
           return state;
       }

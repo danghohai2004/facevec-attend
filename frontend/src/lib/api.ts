@@ -1,8 +1,11 @@
 import axios from "axios";
 import type {
+  DailyStats,
   Employee,
   EmployeeList,
+  MonthlyStats,
   ShiftSettings,
+  SummaryStats,
 } from "@/lib/types";
 
 const rawApiBaseUrl =
@@ -197,24 +200,48 @@ export async function updateShiftSettings(
   return normalizeShiftSettings(response.data);
 }
 
-export async function checkIn(payload: { empId: string }) {
-  const empId = Number(payload.empId);
-  if (Number.isNaN(empId)) {
-    throw new Error("Employee ID phải là số.");
-  }
-  const response = await writeApi.post("/attendance/checkin", null, {
-    params: { emp_id: empId },
-  });
-  return response.data;
+export async function getSummaryStats(): Promise<SummaryStats> {
+  const response = await api.get("/attendance/summary");
+  const data = response.data;
+  return {
+    totalEmployees: data.total_employees,
+    todaysAttendance: data.todays_attendance,
+    averageWorkingHours: data.average_working_hours,
+    onTimeRate: data.on_time_rate,
+    deltas: {
+      todaysAttendance: data.deltas.todays_attendance,
+      averageWorkingHours: data.deltas.average_working_hours,
+      onTimeRate: data.deltas.on_time_rate,
+    },
+  };
 }
 
-export async function checkOut(payload: { empId: string }) {
-  const empId = Number(payload.empId);
-  if (Number.isNaN(empId)) {
-    throw new Error("Employee ID phải là số.");
-  }
-  const response = await writeApi.post("/attendance/checkout", null, {
-    params: { emp_id: empId },
+export async function getMonthlyStats(year: number): Promise<MonthlyStats> {
+  const response = await api.get("/attendance/monthly", { params: { year } });
+  const data = response.data;
+  return {
+    availableYears: data.available_years,
+    items: data.items.map((item: Record<string, number>) => ({
+      month: item.month,
+      attendance: item.attendance,
+      workingHours: item.working_hours,
+      averageHours: item.average_hours,
+    })),
+  };
+}
+
+export async function getDailyStats(
+  year: number,
+  month: number,
+): Promise<DailyStats> {
+  const response = await api.get("/attendance/daily", {
+    params: { year, month },
   });
-  return response.data;
+  const data = response.data;
+  return {
+    items: data.items.map((item: Record<string, number>) => ({
+      day: item.day,
+      averageHours: item.average_hours,
+    })),
+  };
 }

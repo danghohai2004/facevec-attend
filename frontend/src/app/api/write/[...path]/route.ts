@@ -9,8 +9,6 @@ const ALLOWED_TARGETS: Readonly<Record<string, string>> = {
   "POST employees": "/api/employees",
   "DELETE employees": "/api/employees",
   "PUT shift-settings": "/api/shift-settings",
-  "POST attendance/checkin": "/api/attendance/checkin",
-  "POST attendance/checkout": "/api/attendance/checkout",
 };
 
 function configurationError() {
