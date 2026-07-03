@@ -73,12 +73,13 @@ async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             return None, None, "no_face"
-        if not checker.check(item.frame):  # checker expects bytes
-            return None, None, "spoof"
         result = extract_largest_face(img)
         if result is None:
             return None, None, "no_face"
         emb, bbox = result
+        # liveness needs the face bbox, so it runs after detection
+        if not checker.check(img, bbox):
+            return None, None, "spoof"
         return emb, bbox, None
 
     try:
