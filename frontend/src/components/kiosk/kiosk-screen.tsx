@@ -23,7 +23,7 @@ import { getShiftSettings } from "@/lib/api";
 // bounding box tracking the face (MediaPipe in-browser), high-contrast status.
 // Theme-locked dark chrome; the camera image is shown bright (no vignette).
 
-/** Ticks once a second. Shared by the clock and the shift-window badge so
+/** Ticks once a second. Shared by the clock and the shift-window status so
  *  there's a single timer, not one per consumer. */
 function useNow(): Date | null {
   const [now, setNow] = React.useState<Date | null>(null);
@@ -190,7 +190,7 @@ function ServerFaceBox({
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-zinc-950/90 px-6 text-center animate-in fade-in duration-300">
+    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-zinc-950 px-6 text-center animate-in fade-in duration-300">
       {children}
     </div>
   );
