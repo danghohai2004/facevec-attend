@@ -33,16 +33,16 @@ function useNow(): Date | null {
 }
 
 function Clock({ now }: { now: Date | null }) {
-  if (!now) return <div className="h-14 w-44" aria-hidden />; // reserve space
+  if (!now) return <div className="h-12 w-44" aria-hidden />; // reserve space
   return (
     <div className="text-right">
-      <div className="font-mono text-2xl font-semibold tabular-nums leading-none text-white sm:text-3xl">
+      <div className="font-mono text-3xl font-bold tabular-nums leading-none text-white sm:text-4xl">
         {now.toLocaleTimeString("vi-VN", {
           hour: "2-digit",
           minute: "2-digit",
         })}
       </div>
-      <div className="mt-2 text-base font-medium text-zinc-200 sm:text-lg">
+      <div className="mt-1 text-sm font-medium uppercase tracking-wide text-zinc-400 sm:text-base">
         {now.toLocaleDateString("vi-VN", {
           weekday: "long",
           day: "2-digit",
@@ -215,9 +215,6 @@ export function KioskScreen() {
         playsInline
         className="absolute inset-0 h-full w-full -scale-x-100 object-cover"
       />
-      {/* Light gradients only where text sits — keep the face itself clear. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-zinc-950/85 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-zinc-950/90 to-transparent" />
 
       {/* Real-time in-browser face box (positioned imperatively by the tracker). */}
       <div ref={boxRef} className="pointer-events-none absolute z-10 hidden" aria-hidden>
@@ -238,8 +235,16 @@ export function KioskScreen() {
         </div>
       )}
 
-      {/* Clock, top-right */}
-      <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-end px-8 pt-6">
+      {/* Solid header bar: system identity left, clock right. */}
+      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b-2 border-zinc-800 bg-zinc-950 px-8 py-4">
+        <div>
+          <p className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+            Chấm công
+          </p>
+          <p className="text-sm font-medium text-zinc-400 sm:text-base">
+            Hệ thống điểm danh khuôn mặt
+          </p>
+        </div>
         <Clock now={now} />
       </header>
 
