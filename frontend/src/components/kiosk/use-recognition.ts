@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  attendanceMessage,
   initialKioskState,
   kioskPhase,
   recognitionWsUrl,
@@ -17,6 +18,29 @@ const GREETING_MS = 5000;
 const RECONNECT_MS = 2000;
 const JPEG_QUALITY = 0.7;
 
+// The greeting card shows an icon only (no name/status text — see
+// kiosk-screen.tsx), so this is now the only way that info reaches the
+// person: read it aloud. Synthesized server-side (src/modules/tts) rather
+// than the browser's Web Speech API — installed voices vary wildly by
+// OS/browser (silent on machines with no Vietnamese voice, robotic on
+// others), so every kiosk sounds the same regardless of what's on it.
+async function speakGreeting(name: string, attendance: string) {
+  const text = `Xin chào ${name}. ${attendanceMessage(attendance)}.`;
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/tts?text=${encodeURIComponent(text)}`,
+    );
+    if (!response.ok) return;
+    const url = URL.createObjectURL(await response.blob());
+    const audio = new Audio(url);
+    audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+    audio.addEventListener("error", () => URL.revokeObjectURL(url));
+    await audio.play().catch(() => {});
+  } catch {
+    // Best-effort — a failed announcement shouldn't break the kiosk flow.
+  }
+}
+
 // One kiosk terminal keeps a stable id so backend logs stay attributable.
 // ?client_id= wins (per-device provisioning), else a persisted random id.
 function resolveClientId(): string {
@@ -31,7 +55,7 @@ function resolveClientId(): string {
   return id;
 }
 
-export function useRecognition() {
+export function useRecognition(canCaptureRef?: React.RefObject<boolean>) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [state, dispatch] = React.useReducer(reduceKiosk, initialKioskState);
 
@@ -71,6 +95,7 @@ export function useRecognition() {
         }
         dispatch({ type: "message", message: msg });
         if (msg.status === "recognized") {
+          void speakGreeting(msg.name, msg.attendance);
           if (greetingTimerRef.current) {
             window.clearTimeout(greetingTimerRef.current);
           }
@@ -96,6 +121,11 @@ export function useRecognition() {
       if (!video || !video.videoWidth) return;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (!shouldCapture(stateRef.current)) return;
+      // Skip the frame if the in-browser tracker says nobody's close enough to
+      // mean it (someone merely walking past). Left unset/true when the
+      // tracker isn't actively running, so this never blocks capture on
+      // machines where in-browser tracking failed to start.
+      if (canCaptureRef && canCaptureRef.current === false) return;
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
@@ -146,7 +176,7 @@ export function useRecognition() {
       wsRef.current = null;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [canCaptureRef]);
 
   return {
     videoRef,

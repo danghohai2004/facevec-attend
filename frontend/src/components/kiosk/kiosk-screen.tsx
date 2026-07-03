@@ -60,25 +60,19 @@ const shiftKindCopy: Record<
   NonNullable<AttendanceKind>,
   {
     label: string;
-    tag: string;
     icon: typeof LogIn;
     bannerClass: string;
-    tagClass: string;
   }
 > = {
   check_in: {
     label: "Giờ vào ca",
-    tag: "VÀO CA",
     icon: LogIn,
     bannerClass: "bg-emerald-600 shadow-[0_4px_24px_-4px] shadow-emerald-950/60",
-    tagClass: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
   },
   check_out: {
     label: "Giờ tan ca",
-    tag: "TAN CA",
     icon: LogOut,
     bannerClass: "bg-sky-600 shadow-[0_4px_24px_-4px] shadow-sky-950/60",
-    tagClass: "bg-sky-500/15 text-sky-300 ring-sky-400/30",
   },
 };
 
@@ -98,20 +92,6 @@ function ShiftWindowBanner({ kind }: { kind: AttendanceKind }) {
         {label}
       </p>
     </div>
-  );
-}
-
-/** Result badge inside the greeting card: which side of the shift this was. */
-function AttendanceKindBadge({ kind }: { kind: AttendanceKind }) {
-  if (!kind) return null;
-  const { tag, icon: Icon, tagClass } = shiftKindCopy[kind];
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold tracking-wide ring-1 ${tagClass}`}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {tag}
-    </span>
   );
 }
 
@@ -201,9 +181,13 @@ function Overlay({ children }: { children: React.ReactNode }) {
 }
 
 export function KioskScreen() {
-  const { videoRef, phase, greeting, hint, faceBox } = useRecognition();
+  // True once a tracked face is close enough to mean it, not just passing
+  // through the shot. Written by useFaceTracker, read by useRecognition to
+  // gate capture — a plain ref so proximity changes don't cause re-renders.
+  const canCaptureRef = React.useRef(true);
+  const { videoRef, phase, greeting, hint, faceBox } = useRecognition(canCaptureRef);
   const boxRef = React.useRef<HTMLDivElement>(null);
-  const trackerStatus = useFaceTracker(videoRef, boxRef);
+  const trackerStatus = useFaceTracker(videoRef, boxRef, canCaptureRef);
   const scanning = phase === "scanning";
   const showServerBox = trackerStatus === "failed" && faceBox && phase !== "recognized";
 
@@ -284,29 +268,22 @@ export function KioskScreen() {
         </div>
       )}
 
-      {/* Greeting on a successful recognition (~5s, capture paused). Anchored
-          at the bottom, same slot as the scanning hint pill below, so the
-          camera feed and the person's own face stay visible throughout. */}
+      {/* Greeting on a successful recognition (~5s, capture paused). Icon-only
+          now — the name/status text is spoken aloud instead (see
+          useRecognition's speech announcement) so the camera view stays
+          uncluttered. The sr-only text keeps the same info reachable for
+          screen readers, since audio-only excludes anyone who can't hear it. */}
       {phase === "recognized" && greeting && (
         <div
-          className="absolute inset-x-0 bottom-0 z-30 flex justify-center px-6 pb-10"
+          className="absolute inset-x-0 bottom-0 z-30 flex justify-center pb-10"
           aria-live="polite"
         >
-          <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl bg-zinc-950/70 px-8 py-6 text-center backdrop-blur-md ring-1 ring-emerald-400/30 animate-in slide-in-from-bottom-4 fade-in duration-300 motion-reduce:animate-none">
-            <AttendanceKindBadge kind={greeting.kind} />
-            <div className="flex items-center gap-3">
-              <CheckCircle2
-                className="h-8 w-8 shrink-0 text-emerald-400"
-                aria-hidden
-              />
-              <p className="text-3xl font-semibold text-white sm:text-4xl">
-                Xin chào, {greeting.name}
-              </p>
-            </div>
-            <p className="rounded-full bg-emerald-500/15 px-5 py-1.5 text-lg font-medium text-emerald-300 ring-1 ring-emerald-400/30">
-              {greeting.message}
-            </p>
+          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-zinc-950/70 backdrop-blur-md ring-1 ring-emerald-400/30 animate-in zoom-in-75 fade-in duration-300 motion-reduce:animate-none">
+            <CheckCircle2 className="h-14 w-14 text-emerald-400" aria-hidden />
           </div>
+          <span className="sr-only">
+            Xin chào {greeting.name}. {greeting.message}
+          </span>
         </div>
       )}
 

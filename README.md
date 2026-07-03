@@ -73,7 +73,9 @@ facevec-attend/
 │     ├─ employees/         # CRUD + face registration
 │     ├─ attendance/        # check-in/out, shift settings
 │     ├─ recognition/       # ws_ingress, pipeline, extractor, identifier
-│     └─ antispoofing/      # LivenessChecker interface + pass-through default
+│     ├─ antispoofing/      # LivenessChecker interface + pass-through default
+│     └─ tts/               # offline Piper voice for the kiosk's audio greeting
+├─ models/piper/            # self-hosted Piper voice model (vi_VN, ~63MB)
 ├─ frontend/                # Next.js admin dashboard + BFF write proxy
 ├─ tests/                   # pytest suite (mirrors src/ layout)
 └─ docs/                    # detailed documentation (start here)

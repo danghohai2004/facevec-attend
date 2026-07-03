@@ -9,6 +9,7 @@ import {
   recognitionWsUrl,
   attendanceKind,
   currentShiftWindow,
+  isFaceCloseEnough,
   type KioskState,
 } from "./kiosk.ts";
 
@@ -102,5 +103,11 @@ assert.equal(currentShiftWindow(new Date(2026, 0, 1, 12, 0), shift), null);
 const overnight = { ...shift, checkOutStart: "22:00", checkOutEnd: "02:00" };
 assert.equal(currentShiftWindow(new Date(2026, 0, 1, 23, 30), overnight), "check_out");
 assert.equal(currentShiftWindow(new Date(2026, 0, 1, 1, 30), overnight), "check_out");
+
+// isFaceCloseEnough gates capture on bbox area vs. frame area, not raw pixels.
+const frame = { w: 1280, h: 720 };
+assert.equal(isFaceCloseEnough({ width: 100, height: 100 }, frame.w, frame.h), false); // far away, passing by
+assert.equal(isFaceCloseEnough({ width: 400, height: 350 }, frame.w, frame.h), true); // close enough
+assert.equal(isFaceCloseEnough({ width: 400, height: 350 }, 0, 0), false); // no frame dims yet
 
 console.log("kiosk.test.ts: all assertions passed");

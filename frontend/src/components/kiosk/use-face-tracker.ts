@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
+import { isFaceCloseEnough } from "@/lib/kiosk";
 
 // Real-time, in-browser face box. MediaPipe BlazeFace runs on every animation
 // frame and positions `boxRef` imperatively (no React re-render per frame, so it
@@ -15,6 +16,14 @@ export type TrackerStatus = "loading" | "active" | "failed";
 export function useFaceTracker(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   boxRef: React.RefObject<HTMLDivElement | null>,
+  // Mutated imperatively (not React state) so a face merely walking past
+  // doesn't cause a render on every frame. `useRecognition` reads this ref
+  // to decide whether a capture is even worth sending. While the tracker
+  // isn't actively running (loading at boot, or permanently failed on a
+  // machine with no WebGL), this is left `true` so capture behaves exactly
+  // as it did before the proximity gate existed — no in-browser detection
+  // means no cheap way to gate, so we fall back to sending every tick.
+  canCaptureRef?: React.RefObject<boolean>,
 ): TrackerStatus {
   const [status, setStatus] = React.useState<TrackerStatus>("loading");
 
@@ -59,6 +68,7 @@ export function useFaceTracker(
         // instead of leaving an uncaught error in the RAF loop.
         console.error("Face tracker inference failed, falling back to server box", err);
         hideBox();
+        if (canCaptureRef) canCaptureRef.current = true;
         setStatus("failed");
         return;
       }
@@ -66,6 +76,7 @@ export function useFaceTracker(
       const dets = result.detections;
       if (!dets || dets.length === 0) {
         hideBox();
+        if (canCaptureRef) canCaptureRef.current = false;
         return;
       }
       // Largest detection = nearest camera, matching the backend's face pick.
@@ -79,6 +90,7 @@ export function useFaceTracker(
 
       const fw = video.videoWidth;
       const fh = video.videoHeight;
+      if (canCaptureRef) canCaptureRef.current = isFaceCloseEnough(bb, fw, fh);
       const cw = video.clientWidth;
       const ch = video.clientHeight;
       // object-cover: frame scaled to cover, centered, cropped.
@@ -130,6 +142,7 @@ export function useFaceTracker(
         loop();
       } catch (err) {
         console.error("Face tracker init failed, falling back to server box", err);
+        if (canCaptureRef) canCaptureRef.current = true;
         setStatus("failed");
       }
     }
@@ -142,7 +155,7 @@ export function useFaceTracker(
       detector?.close();
       detector = null;
     };
-  }, [videoRef, boxRef]);
+  }, [videoRef, boxRef, canCaptureRef]);
 
   return status;
 }

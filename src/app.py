@@ -16,6 +16,7 @@ from src.modules.recognition.pipeline import run_pipeline
 from src.modules.recognition.ws_ingress import make_ws_router
 from src.modules.employees.api import router as employees_router
 from src.modules.attendance.api import router as attendance_router
+from src.modules.tts.api import router as tts_router
 
 
 def create_app() -> FastAPI:
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
 
     app.include_router(employees_router)
     app.include_router(attendance_router)
+    app.include_router(tts_router)
     app.include_router(make_ws_router(queue, manager))
 
     return app

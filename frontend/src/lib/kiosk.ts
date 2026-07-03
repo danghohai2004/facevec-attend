@@ -106,6 +106,25 @@ function inRange(current: number, start: number, end: number): boolean {
   return current >= start || current <= end; // overnight shift
 }
 
+// Someone merely walking past the camera shouldn't trigger recognition/
+// attendance — only a face filling at least this fraction of the frame area
+// counts as "close enough to mean it". Tune by testing at the camera's actual
+// mount distance; there's no principled derivation, it's a physical heuristic.
+export const MIN_FACE_AREA_RATIO = 0.12;
+
+/** Is a detected face's bounding box big enough (as a fraction of the video
+ *  frame) to treat as someone actually approaching the kiosk, not just
+ *  passing through the shot? */
+export function isFaceCloseEnough(
+  bbox: { width: number; height: number },
+  frameWidth: number,
+  frameHeight: number,
+): boolean {
+  if (!frameWidth || !frameHeight) return false;
+  const ratio = (bbox.width * bbox.height) / (frameWidth * frameHeight);
+  return ratio >= MIN_FACE_AREA_RATIO;
+}
+
 /** Which shift window "now" falls in, so the kiosk can hint check-in vs check-out
  *  before the person even scans. Mirrors get_current_time in service.py. */
 export function currentShiftWindow(
