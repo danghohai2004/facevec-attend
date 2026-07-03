@@ -1,22 +1,38 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CameraOff, CheckCircle2, Loader2, WifiOff } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  CameraOff,
+  CheckCircle2,
+  Loader2,
+  LogIn,
+  LogOut,
+  WifiOff,
+} from "lucide-react";
 import { useRecognition } from "@/components/kiosk/use-recognition";
 import { useFaceTracker } from "@/components/kiosk/use-face-tracker";
-import type { FaceBox as FaceBoxCoords } from "@/lib/kiosk";
+import { currentShiftWindow, type AttendanceKind, type FaceBox as FaceBoxCoords } from "@/lib/kiosk";
+import { getShiftSettings } from "@/lib/api";
 
 // Fullscreen industrial attendance terminal: clear camera feed, a real-time
 // bounding box tracking the face (MediaPipe in-browser), high-contrast status.
 // Theme-locked dark chrome; the camera image is shown bright (no vignette).
 
-function Clock() {
+/** Ticks once a second. Shared by the clock and the shift-window badge so
+ *  there's a single timer, not one per consumer. */
+function useNow(): Date | null {
   const [now, setNow] = React.useState<Date | null>(null);
   React.useEffect(() => {
     // Tick each minute-aligned; 1s interval is fine and keeps it simple.
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+  return now;
+}
+
+function Clock({ now }: { now: Date | null }) {
   if (!now) return <div className="h-14 w-44" aria-hidden />; // reserve space
   return (
     <div className="text-right">
@@ -35,6 +51,67 @@ function Clock() {
         })}
       </div>
     </div>
+  );
+}
+
+// Tailwind can't see interpolated class names ("text-${accent}-300"), so each
+// variant's full class strings are spelled out here instead of built at runtime.
+const shiftKindCopy: Record<
+  NonNullable<AttendanceKind>,
+  {
+    label: string;
+    tag: string;
+    icon: typeof LogIn;
+    bannerClass: string;
+    tagClass: string;
+  }
+> = {
+  check_in: {
+    label: "Giờ vào ca",
+    tag: "VÀO CA",
+    icon: LogIn,
+    bannerClass: "bg-emerald-600 shadow-[0_4px_24px_-4px] shadow-emerald-950/60",
+    tagClass: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
+  },
+  check_out: {
+    label: "Giờ tan ca",
+    tag: "TAN CA",
+    icon: LogOut,
+    bannerClass: "bg-sky-600 shadow-[0_4px_24px_-4px] shadow-sky-950/60",
+    tagClass: "bg-sky-500/15 text-sky-300 ring-sky-400/30",
+  },
+};
+
+/** Big pill, top-center, telling the person which side of the shift the
+ *  terminal is currently in. Independent of scan/recognition phase so it sits
+ *  still and keeps ticking over in real time (only hidden behind the
+ *  full-screen camera/connection overlays, which sit at a higher z-index). */
+function ShiftWindowBanner({ kind }: { kind: AttendanceKind }) {
+  if (!kind) return null;
+  const { label, icon: Icon, bannerClass } = shiftKindCopy[kind];
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-full px-6 py-3 sm:gap-4 sm:px-9 sm:py-4 animate-in fade-in slide-in-from-top-2 duration-300 ${bannerClass}`}
+    >
+      <Icon className="h-7 w-7 shrink-0 text-white sm:h-9 sm:w-9" aria-hidden />
+      <p className="text-xl font-black uppercase tracking-tight text-white sm:text-3xl">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+/** Result badge inside the greeting card: which side of the shift this was. */
+function AttendanceKindBadge({ kind }: { kind: AttendanceKind }) {
+  if (!kind) return null;
+  const { tag, icon: Icon, tagClass } = shiftKindCopy[kind];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold tracking-wide ring-1 ${tagClass}`}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {tag}
+    </span>
   );
 }
 
@@ -130,6 +207,19 @@ export function KioskScreen() {
   const scanning = phase === "scanning";
   const showServerBox = trackerStatus === "failed" && faceBox && phase !== "recognized";
 
+  const now = useNow();
+  // The kiosk tab runs for hours without remounting or losing focus, so a
+  // plain useQuery only ever fetches once at boot — an admin editing shift
+  // settings elsewhere would never reach it without refetchInterval polling.
+  const shiftQuery = useQuery({
+    queryKey: ["shift-settings"],
+    queryFn: getShiftSettings,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+  const shiftWindow =
+    now && shiftQuery.data ? currentShiftWindow(now, shiftQuery.data) : null;
+
   return (
     <main className="relative min-h-[100dvh] overflow-hidden bg-zinc-950 text-white">
       {/* Live camera fills the screen, shown bright and mirrored (selfie view). */}
@@ -152,9 +242,20 @@ export function KioskScreen() {
       {/* Fallback box from the backend model if the in-browser tracker failed. */}
       {showServerBox && <ServerFaceBox videoRef={videoRef} bbox={faceBox} />}
 
-      {/* Header: clock only (top-right) */}
+      {/* Shift-window status, top-center. Stays up and keeps updating in real
+          time across scanning AND the post-recognition greeting — it is not
+          gated on `phase`, only on knowing a window at all. The full-screen
+          camera/connection overlays below sit at z-30 and cover it naturally
+          when there's nothing useful to show anyway. */}
+      {shiftWindow && (
+        <div className="pointer-events-none absolute inset-x-0 top-6 z-20 flex justify-center px-6">
+          <ShiftWindowBanner kind={shiftWindow} />
+        </div>
+      )}
+
+      {/* Clock, top-right */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-end px-8 pt-6">
-        <Clock />
+        <Clock now={now} />
       </header>
 
       {/* Bottom status bar. A hint means something needs attention → small red
@@ -183,23 +284,30 @@ export function KioskScreen() {
         </div>
       )}
 
-      {/* Greeting on a successful recognition (~5s, capture paused) */}
+      {/* Greeting on a successful recognition (~5s, capture paused). Anchored
+          at the bottom, same slot as the scanning hint pill below, so the
+          camera feed and the person's own face stay visible throughout. */}
       {phase === "recognized" && greeting && (
-        <Overlay>
-          <CheckCircle2
-            className="h-24 w-24 text-emerald-400 animate-in zoom-in-75 duration-300 motion-reduce:animate-none"
-            aria-hidden
-          />
-          <div>
-            <p className="text-lg text-zinc-400">Xin chào</p>
-            <p className="mt-1 text-5xl font-semibold text-white sm:text-6xl">
-              {greeting.name}
+        <div
+          className="absolute inset-x-0 bottom-0 z-30 flex justify-center px-6 pb-10"
+          aria-live="polite"
+        >
+          <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl bg-zinc-950/70 px-8 py-6 text-center backdrop-blur-md ring-1 ring-emerald-400/30 animate-in slide-in-from-bottom-4 fade-in duration-300 motion-reduce:animate-none">
+            <AttendanceKindBadge kind={greeting.kind} />
+            <div className="flex items-center gap-3">
+              <CheckCircle2
+                className="h-8 w-8 shrink-0 text-emerald-400"
+                aria-hidden
+              />
+              <p className="text-3xl font-semibold text-white sm:text-4xl">
+                Xin chào, {greeting.name}
+              </p>
+            </div>
+            <p className="rounded-full bg-emerald-500/15 px-5 py-1.5 text-lg font-medium text-emerald-300 ring-1 ring-emerald-400/30">
+              {greeting.message}
             </p>
           </div>
-          <p className="rounded-full bg-emerald-500/15 px-6 py-2 text-2xl font-medium text-emerald-300 ring-1 ring-emerald-400/30">
-            {greeting.message}
-          </p>
-        </Overlay>
+        </div>
       )}
 
       {/* Camera permission / hardware failure */}

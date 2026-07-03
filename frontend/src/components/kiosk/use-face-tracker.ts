@@ -30,17 +30,39 @@ export function useFaceTracker(
     }
 
     function loop() {
-      raf = requestAnimationFrame(loop);
       const video = videoRef.current;
       const boxEl = boxRef.current;
-      if (!detector || !video || !boxEl) return;
-      if (video.readyState < 2 || !video.videoWidth) return;
+      if (!detector || !video || !boxEl) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      if (video.readyState < 2 || !video.videoWidth) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       // detectForVideo requires a monotonically increasing, unique timestamp;
       // skip frames the camera hasn't advanced past.
-      if (video.currentTime === lastVideoTime) return;
+      if (video.currentTime === lastVideoTime) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       lastVideoTime = video.currentTime;
 
-      const result = detector.detectForVideo(video, performance.now());
+      let result;
+      try {
+        result = detector.detectForVideo(video, performance.now());
+      } catch (err) {
+        // Some environments report a usable delegate at creation time but
+        // fail on the first real inference (e.g. no WebGL context at all —
+        // MediaPipe's Web build needs GL for buffer plumbing regardless of
+        // delegate). Stop tracking and let the server-box fallback take over
+        // instead of leaving an uncaught error in the RAF loop.
+        console.error("Face tracker inference failed, falling back to server box", err);
+        hideBox();
+        setStatus("failed");
+        return;
+      }
+      raf = requestAnimationFrame(loop);
       const dets = result.detections;
       if (!dets || dets.length === 0) {
         hideBox();
@@ -75,16 +97,30 @@ export function useFaceTracker(
       boxEl.style.height = `${py2 - py1}px`;
     }
 
+    async function createDetector(vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>) {
+      const baseOptions = { modelAssetPath: "/mediapipe/blaze_face_short_range.tflite" };
+      try {
+        // GPU is faster, but needs a working WebGL context — not guaranteed on
+        // every machine/browser (e.g. no WebGL support, software rendering
+        // disabled). Fall back to CPU rather than losing in-browser tracking
+        // entirely over a delegate that just isn't available here.
+        return await FaceDetector.createFromOptions(vision, {
+          baseOptions: { ...baseOptions, delegate: "GPU" },
+          runningMode: "VIDEO",
+        });
+      } catch (err) {
+        console.warn("GPU face detector unavailable, retrying on CPU", err);
+        return await FaceDetector.createFromOptions(vision, {
+          baseOptions: { ...baseOptions, delegate: "CPU" },
+          runningMode: "VIDEO",
+        });
+      }
+    }
+
     async function init() {
       try {
         const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-        detector = await FaceDetector.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "/mediapipe/blaze_face_short_range.tflite",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-        });
+        detector = await createDetector(vision);
         if (cancelled) {
           detector.close();
           detector = null;

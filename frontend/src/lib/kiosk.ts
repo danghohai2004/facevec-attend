@@ -25,10 +25,13 @@ export type RecognitionMessage =
  * socket. Track each rather than flattening early — the derived `kioskPhase`
  * picks the one that matters for what the user sees.
  */
+/** Which side of a shift the just-logged (or currently open) event belongs to. */
+export type AttendanceKind = "check_in" | "check_out" | null;
+
 export interface KioskState {
   camera: "pending" | "ready" | "error";
   socket: "connecting" | "open" | "closed";
-  greeting: { name: string; message: string } | null;
+  greeting: { name: string; message: string; kind: AttendanceKind } | null;
   hint: string | null;
   // Live model bbox to draw over the detected face, or null when no face.
   faceBox: FaceBox | null;
@@ -77,6 +80,53 @@ export function attendanceMessage(raw: string): string {
   }
 }
 
+/** Which shift-side a raw backend attendance string belongs to (for the result badge). */
+export function attendanceKind(raw: string): AttendanceKind {
+  switch (raw) {
+    case "Check in successful":
+    case "Already checked in":
+      return "check_in";
+    case "Check out successful":
+    case "Check in not found to check out":
+      return "check_out";
+    default:
+      return null;
+  }
+}
+
+/** "HH:mm" → minutes since midnight. */
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/** Same wraparound rule as the backend's _is_time_in_range (service.py). */
+function inRange(current: number, start: number, end: number): boolean {
+  if (start <= end) return current >= start && current <= end;
+  return current >= start || current <= end; // overnight shift
+}
+
+/** Which shift window "now" falls in, so the kiosk can hint check-in vs check-out
+ *  before the person even scans. Mirrors get_current_time in service.py. */
+export function currentShiftWindow(
+  now: Date,
+  shift: {
+    checkInStart: string;
+    checkInEnd: string;
+    checkOutStart: string;
+    checkOutEnd: string;
+  },
+): AttendanceKind {
+  const current = now.getHours() * 60 + now.getMinutes();
+  if (inRange(current, toMinutes(shift.checkInStart), toMinutes(shift.checkInEnd))) {
+    return "check_in";
+  }
+  if (inRange(current, toMinutes(shift.checkOutStart), toMinutes(shift.checkOutEnd))) {
+    return "check_out";
+  }
+  return null;
+}
+
 export function reduceKiosk(state: KioskState, event: KioskEvent): KioskState {
   switch (event.type) {
     case "camera_ready":
@@ -104,6 +154,7 @@ export function reduceKiosk(state: KioskState, event: KioskEvent): KioskState {
             greeting: {
               name: msg.name,
               message: attendanceMessage(msg.attendance),
+              kind: attendanceKind(msg.attendance),
             },
             hint: null,
             faceBox: bbox,

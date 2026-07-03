@@ -7,6 +7,8 @@ import {
   kioskPhase,
   shouldCapture,
   recognitionWsUrl,
+  attendanceKind,
+  currentShiftWindow,
   type KioskState,
 } from "./kiosk.ts";
 
@@ -44,7 +46,11 @@ s = reduceKiosk(s, {
 });
 assert.equal(kioskPhase(s), "recognized");
 assert.equal(shouldCapture(s), false);
-assert.deepEqual(s.greeting, { name: "Trần Minh", message: "Đã chấm công vào ca" });
+assert.deepEqual(s.greeting, {
+  name: "Trần Minh",
+  message: "Đã chấm công vào ca",
+  kind: "check_in",
+});
 
 // In-flight results are ignored while the greeting is up (no flicker).
 const held = reduceKiosk(s, {
@@ -73,5 +79,28 @@ assert.equal(
   recognitionWsUrl("https://api.example.com/", "a b"),
   "wss://api.example.com/ws/recognition/a%20b",
 );
+
+// Raw backend strings map to the right badge kind for the greeting card.
+assert.equal(attendanceKind("Check in successful"), "check_in");
+assert.equal(attendanceKind("Already checked in"), "check_in");
+assert.equal(attendanceKind("Check out successful"), "check_out");
+assert.equal(attendanceKind("Check in not found to check out"), "check_out");
+assert.equal(attendanceKind("Not during working hours"), null);
+assert.equal(attendanceKind("Lỗi hệ thống"), null);
+
+// currentShiftWindow mirrors the backend's window check, including overnight wrap.
+const shift = {
+  checkInStart: "08:00",
+  checkInEnd: "10:00",
+  checkOutStart: "17:00",
+  checkOutEnd: "19:00",
+};
+assert.equal(currentShiftWindow(new Date(2026, 0, 1, 9, 0), shift), "check_in");
+assert.equal(currentShiftWindow(new Date(2026, 0, 1, 18, 0), shift), "check_out");
+assert.equal(currentShiftWindow(new Date(2026, 0, 1, 12, 0), shift), null);
+// Overnight window (22:00 → 02:00) wraps past midnight.
+const overnight = { ...shift, checkOutStart: "22:00", checkOutEnd: "02:00" };
+assert.equal(currentShiftWindow(new Date(2026, 0, 1, 23, 30), overnight), "check_out");
+assert.equal(currentShiftWindow(new Date(2026, 0, 1, 1, 30), overnight), "check_out");
 
 console.log("kiosk.test.ts: all assertions passed");
