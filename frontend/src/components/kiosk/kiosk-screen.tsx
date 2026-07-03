@@ -7,13 +7,16 @@ import {
   CameraOff,
   CheckCircle2,
   Loader2,
-  LogIn,
-  LogOut,
   WifiOff,
 } from "lucide-react";
 import { useRecognition } from "@/components/kiosk/use-recognition";
 import { useFaceTracker } from "@/components/kiosk/use-face-tracker";
-import { currentShiftWindow, type AttendanceKind, type FaceBox as FaceBoxCoords } from "@/lib/kiosk";
+import {
+  currentShiftWindow,
+  type AttendanceKind,
+  type FaceBox as FaceBoxCoords,
+  type KioskPhase,
+} from "@/lib/kiosk";
 import { getShiftSettings } from "@/lib/api";
 
 // Fullscreen industrial attendance terminal: clear camera feed, a real-time
@@ -54,43 +57,55 @@ function Clock({ now }: { now: Date | null }) {
   );
 }
 
-// Tailwind can't see interpolated class names ("text-${accent}-300"), so each
-// variant's full class strings are spelled out here instead of built at runtime.
-const shiftKindCopy: Record<
-  NonNullable<AttendanceKind>,
-  {
-    label: string;
-    icon: typeof LogIn;
-    bannerClass: string;
-  }
-> = {
-  check_in: {
-    label: "Giờ vào ca",
-    icon: LogIn,
-    bannerClass: "bg-emerald-600 shadow-[0_4px_24px_-4px] shadow-emerald-950/60",
-  },
-  check_out: {
-    label: "Giờ tan ca",
-    icon: LogOut,
-    bannerClass: "bg-sky-600 shadow-[0_4px_24px_-4px] shadow-sky-950/60",
-  },
-};
+/** One solid full-width bar at the bottom — the single place all status goes.
+ *  Priority: recognition result > warning hint > shift-window guidance >
+ *  out-of-hours. Solid colors, no blur, uppercase — readable across a room. */
+function StatusBar({
+  phase,
+  greeting,
+  hint,
+  shiftWindow,
+}: {
+  phase: KioskPhase;
+  greeting: { name: string; message: string; kind: AttendanceKind } | null;
+  hint: string | null;
+  shiftWindow: AttendanceKind;
+}) {
+  let barClass = "bg-zinc-900 text-zinc-400";
+  let content: React.ReactNode = "Ngoài giờ chấm công";
 
-/** Big pill, top-center, telling the person which side of the shift the
- *  terminal is currently in. Independent of scan/recognition phase so it sits
- *  still and keeps ticking over in real time (only hidden behind the
- *  full-screen camera/connection overlays, which sit at a higher z-index). */
-function ShiftWindowBanner({ kind }: { kind: AttendanceKind }) {
-  if (!kind) return null;
-  const { label, icon: Icon, bannerClass } = shiftKindCopy[kind];
+  if (phase === "recognized" && greeting) {
+    barClass = "bg-green-600 text-white";
+    content = (
+      <>
+        <CheckCircle2 className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
+        <span>
+          Xin chào {greeting.name} — {greeting.message}
+        </span>
+      </>
+    );
+  } else if (phase === "scanning" && hint) {
+    barClass = "bg-red-700 text-white";
+    content = (
+      <>
+        <AlertTriangle className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
+        <span>{hint}</span>
+      </>
+    );
+  } else if (phase === "scanning" && shiftWindow === "check_in") {
+    barClass = "bg-emerald-700 text-white";
+    content = <span>→ Giờ vào ca — đưa khuôn mặt vào khung</span>;
+  } else if (phase === "scanning" && shiftWindow === "check_out") {
+    barClass = "bg-sky-700 text-white";
+    content = <span>← Giờ tan ca — đưa khuôn mặt vào khung</span>;
+  }
+
   return (
     <div
-      className={`flex items-center gap-3 rounded-full px-6 py-3 sm:gap-4 sm:px-9 sm:py-4 animate-in fade-in slide-in-from-top-2 duration-300 ${bannerClass}`}
+      className={`absolute inset-x-0 bottom-0 z-20 flex min-h-20 items-center justify-center gap-4 border-t-2 border-zinc-800 px-8 py-4 text-center text-xl font-black uppercase tracking-tight sm:text-3xl ${barClass}`}
+      aria-live="polite"
     >
-      <Icon className="h-7 w-7 shrink-0 text-white sm:h-9 sm:w-9" aria-hidden />
-      <p className="text-xl font-black uppercase tracking-tight text-white sm:text-3xl">
-        {label}
-      </p>
+      {content}
     </div>
   );
 }
@@ -189,7 +204,6 @@ export function KioskScreen() {
   const { videoRef, phase, greeting, hint, faceBox } = useRecognition(canCaptureRef);
   const boxRef = React.useRef<HTMLDivElement>(null);
   const trackerStatus = useFaceTracker(videoRef, boxRef, canCaptureRef);
-  const scanning = phase === "scanning";
   const showServerBox = trackerStatus === "failed" && faceBox && phase !== "recognized";
 
   const now = useNow();
@@ -224,17 +238,6 @@ export function KioskScreen() {
       {/* Fallback box from the backend model if the in-browser tracker failed. */}
       {showServerBox && <ServerFaceBox videoRef={videoRef} bbox={faceBox} />}
 
-      {/* Shift-window status, top-center. Stays up and keeps updating in real
-          time across scanning AND the post-recognition greeting — it is not
-          gated on `phase`, only on knowing a window at all. The full-screen
-          camera/connection overlays below sit at z-30 and cover it naturally
-          when there's nothing useful to show anyway. */}
-      {shiftWindow && (
-        <div className="pointer-events-none absolute inset-x-0 top-6 z-20 flex justify-center px-6">
-          <ShiftWindowBanner kind={shiftWindow} />
-        </div>
-      )}
-
       {/* Solid header bar: system identity left, clock right. */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b-2 border-zinc-800 bg-zinc-950 px-8 py-4">
         <div>
@@ -248,50 +251,12 @@ export function KioskScreen() {
         <Clock now={now} />
       </header>
 
-      {/* Bottom status bar. A hint means something needs attention → small red
-          warning pill; otherwise the big neutral guidance prompt. */}
-      {scanning && (
-        <div
-          className="absolute inset-x-0 bottom-0 z-20 flex justify-center px-6 pb-10"
-          aria-live="polite"
-        >
-          {hint ? (
-            <div className="flex items-center gap-2 rounded-lg bg-red-950/70 px-4 py-2 backdrop-blur-md ring-1 ring-red-500/40">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" aria-hidden />
-              <p className="text-sm font-medium text-red-100 sm:text-base">{hint}</p>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 rounded-2xl bg-zinc-950/70 px-7 py-4 backdrop-blur-md ring-1 ring-white/10">
-              <span
-                className="h-2.5 w-2.5 rounded-full bg-emerald-400 motion-safe:animate-pulse"
-                aria-hidden
-              />
-              <p className="text-xl font-medium text-white sm:text-2xl">
-                Đưa khuôn mặt vào giữa màn hình để điểm danh
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Greeting on a successful recognition (~5s, capture paused). Icon-only
-          now — the name/status text is spoken aloud instead (see
-          useRecognition's speech announcement) so the camera view stays
-          uncluttered. The sr-only text keeps the same info reachable for
-          screen readers, since audio-only excludes anyone who can't hear it. */}
-      {phase === "recognized" && greeting && (
-        <div
-          className="absolute inset-x-0 bottom-0 z-30 flex justify-center pb-10"
-          aria-live="polite"
-        >
-          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-zinc-950/70 backdrop-blur-md ring-1 ring-emerald-400/30 animate-in zoom-in-75 fade-in duration-300 motion-reduce:animate-none">
-            <CheckCircle2 className="h-14 w-14 text-emerald-400" aria-hidden />
-          </div>
-          <span className="sr-only">
-            Xin chào {greeting.name}. {greeting.message}
-          </span>
-        </div>
-      )}
+      <StatusBar
+        phase={phase}
+        greeting={greeting}
+        hint={hint}
+        shiftWindow={shiftWindow}
+      />
 
       {/* Camera permission / hardware failure */}
       {phase === "camera_error" && (
