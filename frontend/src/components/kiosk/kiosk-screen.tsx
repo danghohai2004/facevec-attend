@@ -16,6 +16,7 @@ import {
   type AttendanceKind,
   type FaceBox as FaceBoxCoords,
   type KioskPhase,
+  type KioskState,
 } from "@/lib/kiosk";
 import { getShiftSettings } from "@/lib/api";
 
@@ -59,7 +60,13 @@ function Clock({ now }: { now: Date | null }) {
 
 /** One solid full-width bar at the bottom — the single place all status goes.
  *  Priority: recognition result > warning hint > shift-window guidance >
- *  out-of-hours. Solid colors, no blur, uppercase — readable across a room. */
+ *  out-of-hours. Solid colors, no blur, uppercase — readable across a room.
+ *
+ *  shiftWindow semantics: undefined = not known yet (clock hasn't ticked,
+ *  settings still loading or failing) → neutral guidance, never claim
+ *  "out of hours"; null = settings loaded and now is genuinely outside both
+ *  windows. Non-scanning phases render the bar empty so the aria-live region
+ *  doesn't announce text that contradicts the full-screen overlay above it. */
 function StatusBar({
   phase,
   greeting,
@@ -67,12 +74,12 @@ function StatusBar({
   shiftWindow,
 }: {
   phase: KioskPhase;
-  greeting: { name: string; message: string; kind: AttendanceKind } | null;
+  greeting: KioskState["greeting"];
   hint: string | null;
-  shiftWindow: AttendanceKind;
+  shiftWindow: AttendanceKind | undefined;
 }) {
   let barClass = "bg-zinc-900 text-zinc-400";
-  let content: React.ReactNode = "Ngoài giờ chấm công";
+  let content: React.ReactNode = null;
 
   if (phase === "recognized" && greeting) {
     barClass = "bg-green-600 text-white";
@@ -94,10 +101,22 @@ function StatusBar({
     );
   } else if (phase === "scanning" && shiftWindow === "check_in") {
     barClass = "bg-emerald-700 text-white";
-    content = <span>→ Giờ vào ca — đưa khuôn mặt vào khung</span>;
+    content = (
+      <span>
+        <span aria-hidden>→ </span>Giờ vào ca — đưa khuôn mặt vào khung
+      </span>
+    );
   } else if (phase === "scanning" && shiftWindow === "check_out") {
     barClass = "bg-sky-700 text-white";
-    content = <span>← Giờ tan ca — đưa khuôn mặt vào khung</span>;
+    content = (
+      <span>
+        <span aria-hidden>← </span>Giờ tan ca — đưa khuôn mặt vào khung
+      </span>
+    );
+  } else if (phase === "scanning" && shiftWindow === undefined) {
+    content = <span>Đưa khuôn mặt vào khung để điểm danh</span>;
+  } else if (phase === "scanning") {
+    content = <span>Ngoài giờ chấm công</span>;
   }
 
   return (
@@ -216,8 +235,10 @@ export function KioskScreen() {
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
   });
+  // undefined = clock/settings not ready yet — StatusBar must not claim
+  // "out of hours" until the window is actually known.
   const shiftWindow =
-    now && shiftQuery.data ? currentShiftWindow(now, shiftQuery.data) : null;
+    now && shiftQuery.data ? currentShiftWindow(now, shiftQuery.data) : undefined;
 
   return (
     <main className="relative min-h-[100dvh] overflow-hidden bg-zinc-950 text-white">
