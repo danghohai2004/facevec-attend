@@ -15,6 +15,7 @@ dependencies = [
     "insightface>=0.7.3",
     "python-dotenv>=1.0.0",
     "piper-tts>=1.4.2",
+    "openpyxl>=3.1",
 ]
 
 [dependency-groups]

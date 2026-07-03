@@ -1,5 +1,5 @@
 from datetime import date
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.auth import require_api_key
@@ -16,6 +16,7 @@ from src.modules.attendance.schemas import (
 from src.modules.attendance.service import (
     get_daily_stats,
     get_monthly_stats,
+    get_monthly_report,
     get_shift_settings,
     get_summary_stats,
     list_attendance_logs,
@@ -66,6 +67,24 @@ async def api_daily_stats(
     if err:
         raise HTTPException(500, err)
     return stats
+
+
+@router.get("/attendance/report")
+async def api_monthly_report(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+):
+    content, err = await get_monthly_report(db, year, month)
+    if err:
+        raise HTTPException(500, err)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="attendance_{year}-{month:02d}.xlsx"'
+        },
+    )
 
 
 @router.post(

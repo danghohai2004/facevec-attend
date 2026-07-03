@@ -16,15 +16,17 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Clock,
+  Download,
   TrendingUp,
   UserCheck,
   Users,
   type LucideIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getDailyStats, getMonthlyStats, getSummaryStats } from "@/lib/api";
+import { attendanceReportUrl, getDailyStats, getMonthlyStats, getSummaryStats } from "@/lib/api";
 import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -217,6 +219,18 @@ export function DashboardClient() {
               ))}
             </SelectContent>
           </Select>
+          <Button asChild variant="outline">
+            <a
+              href={attendanceReportUrl(
+                Number(selectedYear),
+                monthOptions.indexOf(selectedMonth) + 1,
+              )}
+              download
+            >
+              <Download className="h-4 w-4" />
+              Export Excel
+            </a>
+          </Button>
         </div>
       </div>
 

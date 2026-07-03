@@ -230,6 +230,10 @@ export async function getMonthlyStats(year: number): Promise<MonthlyStats> {
   };
 }
 
+export function attendanceReportUrl(year: number, month: number): string {
+  return `${apiBaseUrl}/attendance/report?year=${year}&month=${month}`;
+}
+
 export async function getDailyStats(
   year: number,
   month: number,

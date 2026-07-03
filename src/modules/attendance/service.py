@@ -1,7 +1,9 @@
 import logging
 from datetime import date, datetime, time, timedelta
+from io import BytesIO
 from zoneinfo import ZoneInfo
 
+from openpyxl import Workbook
 from sqlalchemy import Time, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -366,6 +368,83 @@ async def get_monthly_stats(
         ), None
     except Exception:
         logger.exception("Loading monthly attendance statistics failed")
+        return None, INTERNAL_ERROR
+
+
+def build_report_workbook(employees, logs, check_in_end: time) -> bytes:
+    """Pure workbook builder — Summary sheet (one row per employee, including
+    zero-attendance ones) + Detail sheet (one row per log)."""
+    by_emp = {e.emp_id: e for e in employees}
+    stats = {e.emp_id: {"days": set(), "hours": 0.0, "late": 0} for e in employees}
+    for log in logs:
+        s = stats.get(log.emp_id)
+        if s is None:
+            continue
+        s["days"].add(log.working_date)
+        if log.working_duration is not None:
+            s["hours"] += log.working_duration.total_seconds() / 3600
+        if log.checkin_time.time() > check_in_end:
+            s["late"] += 1
+
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "Summary"
+    summary.append(["Employee Code", "Name", "Days Worked", "Total Hours", "Late Count"])
+    for e in employees:
+        s = stats[e.emp_id]
+        summary.append([e.emp_code, e.name, len(s["days"]), round(s["hours"], 2), s["late"]])
+
+    detail = wb.create_sheet("Detail")
+    detail.append(["Employee Code", "Name", "Date", "Check-in", "Check-out", "Hours"])
+    for log in logs:
+        e = by_emp.get(log.emp_id)
+        if e is None:
+            continue
+        detail.append([
+            e.emp_code,
+            e.name,
+            log.working_date.isoformat(),
+            log.checkin_time.strftime("%H:%M:%S"),
+            log.checkout_time.strftime("%H:%M:%S") if log.checkout_time else "",
+            round(log.working_duration.total_seconds() / 3600, 2)
+            if log.working_duration is not None
+            else "",
+        ])
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+async def get_monthly_report(
+    db: AsyncSession,
+    year: int,
+    month: int,
+) -> tuple[bytes | None, str | None]:
+    try:
+        shifts, err = await get_shift_settings(db)
+        if err:
+            return None, err
+        shift = _normalize_shifts_time(shifts)
+
+        employees = (
+            await db.execute(select(Employee).order_by(Employee.emp_code))
+        ).scalars().all()
+        # ponytail: no pagination — kiosk-scale data, hundreds of logs/month
+        logs = (
+            await db.execute(
+                select(AttendanceLog)
+                .where(
+                    func.extract("year", AttendanceLog.working_date) == year,
+                    func.extract("month", AttendanceLog.working_date) == month,
+                )
+                .order_by(AttendanceLog.emp_id, AttendanceLog.working_date)
+            )
+        ).scalars().all()
+
+        return build_report_workbook(employees, logs, shift["check_in_end"]), None
+    except Exception:
+        logger.exception("Building monthly attendance report failed")
         return None, INTERNAL_ERROR
 
 
