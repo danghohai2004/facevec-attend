@@ -58,83 +58,99 @@ function EnrollmentCapture({
   const { proximity } = useFaceTracker(videoRef, boxRef, canCaptureRef);
   const [countdown, setCountdown] = React.useState<number | null>(null);
 
-  const mutation = useMutation({
+  const {
+    error,
+    isError,
+    isPending,
+    isSuccess,
+    mutate,
+    reset,
+  } = useMutation({
     mutationFn: createEmployee,
   });
 
   React.useEffect(() => {
-    if (!mutation.isSuccess) return;
+    if (!isSuccess) return;
     const timeout = window.setTimeout(
       () => router.push("/employees"),
       SUCCESS_REDIRECT_MS,
     );
     return () => window.clearTimeout(timeout);
-  }, [mutation.isSuccess, router]);
+  }, [isSuccess, router]);
 
   React.useEffect(() => {
-    if (!mutation.isError) return;
+    if (!isError) return;
     const timeout = window.setTimeout(() => {
       submittedRef.current = false;
       setCountdown(null);
-      mutation.reset();
+      reset();
     }, ERROR_RESET_MS);
     return () => window.clearTimeout(timeout);
-  }, [mutation.isError, mutation.reset]);
+  }, [isError, reset]);
 
   const idle =
     cameraPhase === "ready" &&
-    !mutation.isPending &&
-    !mutation.isSuccess &&
-    !submittedRef.current;
+    !isPending &&
+    !isSuccess;
 
   React.useEffect(() => {
-    if (!idle) return;
-    if (proximity !== "ok") {
-      setCountdown((current) =>
-        nextEnrollmentCountdown(current, "face_lost"),
-      );
-      return;
-    }
+    if (!idle || submittedRef.current || proximity !== "ok") return;
 
-    setCountdown((current) => nextEnrollmentCountdown(current, "face_ok"));
-    const interval = window.setInterval(() => {
-      setCountdown((current) => nextEnrollmentCountdown(current, "tick"));
-    }, 1000);
-    return () => window.clearInterval(interval);
+    let interval: number | undefined;
+    const animationFrame = window.requestAnimationFrame(() => {
+      setCountdown(nextEnrollmentCountdown(null, "face_ok"));
+      interval = window.setInterval(() => {
+        setCountdown((current) => nextEnrollmentCountdown(current, "tick"));
+      }, 1000);
+    });
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      if (interval !== undefined) window.clearInterval(interval);
+    };
   }, [idle, proximity]);
 
   React.useEffect(() => {
-    if (countdown === null || countdown > 0 || submittedRef.current) return;
+    if (
+      countdown === null ||
+      countdown > 0 ||
+      proximity !== "ok" ||
+      submittedRef.current
+    ) {
+      return;
+    }
 
     const video = videoRef.current;
     if (!video) return;
     const file = captureFrame(video);
     if (!file) {
-      setCountdown(null);
-      return;
+      const animationFrame = window.requestAnimationFrame(() => {
+        setCountdown(nextEnrollmentCountdown(null, "face_ok"));
+      });
+      return () => window.cancelAnimationFrame(animationFrame);
     }
 
     submittedRef.current = true;
-    setCountdown(null);
-    mutation.mutate({ name, empCode, files: [file] });
-  }, [countdown, empCode, mutation.mutate, name]);
+    mutate({ name, empCode, files: [file] });
+  }, [countdown, empCode, mutate, name, proximity]);
 
   const errorMessage =
-    mutation.error instanceof Error && mutation.error.message
-      ? mutation.error.message
+    error instanceof Error && error.message
+      ? error.message
       : "Không thể đăng ký nhân viên.";
 
   const statusText = (() => {
-    if (mutation.isPending) return "Đang đăng ký…";
-    if (mutation.isError) return `Đăng ký thất bại — ${errorMessage}`;
-    if (countdown !== null && countdown > 0) return `Giữ yên… ${countdown}`;
+    if (isPending) return "Đang đăng ký…";
+    if (isError) return `Đăng ký thất bại — ${errorMessage}`;
+    if (proximity === "ok" && countdown !== null && countdown > 0) {
+      return `Giữ yên… ${countdown}`;
+    }
     if (proximity === "far") return "Đưa khuôn mặt lại gần hơn";
     return "Đưa khuôn mặt vào khung để đăng ký";
   })();
 
-  const barClass = mutation.isError
+  const barClass = isError
     ? "bg-red-700 text-white"
-    : countdown !== null && countdown > 0
+    : proximity === "ok" && countdown !== null && countdown > 0
       ? "bg-emerald-700 text-white"
       : proximity === "far"
         ? "bg-amber-600 text-white"
@@ -194,7 +210,7 @@ function EnrollmentCapture({
         </Overlay>
       )}
 
-      {mutation.isSuccess && (
+      {isSuccess && (
         <Overlay>
           <CheckCircle2 className="h-20 w-20 text-green-400" aria-hidden />
           <p className="text-3xl font-semibold">Đăng ký thành công</p>
