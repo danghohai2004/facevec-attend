@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CameraOff, CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import { Brackets, Overlay } from "@/components/kiosk/kiosk-chrome";
 import {
@@ -49,6 +49,7 @@ function EnrollmentCapture({
   empCode: string;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const boxRef = React.useRef<HTMLDivElement>(null);
   const canCaptureRef = React.useRef(true);
@@ -71,12 +72,14 @@ function EnrollmentCapture({
 
   React.useEffect(() => {
     if (!isSuccess) return;
+    void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    void queryClient.invalidateQueries({ queryKey: ["employee-name"] });
     const timeout = window.setTimeout(
       () => router.push("/employees"),
       SUCCESS_REDIRECT_MS,
     );
     return () => window.clearTimeout(timeout);
-  }, [isSuccess, router]);
+  }, [isSuccess, queryClient, router]);
 
   React.useEffect(() => {
     if (!isError) return;
