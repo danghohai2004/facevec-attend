@@ -117,6 +117,15 @@ export const MIN_FACE_AREA_RATIO = 0.12;
 // enrollment countdown forever. Hysteresis makes the decision stable.
 export const KEEP_FACE_AREA_RATIO = 0.1;
 
+/** Whether a missing detection is still within the brief dropout window. */
+export function isWithinFaceLossGrace(
+  lastSeen: number,
+  now: number,
+  graceMs: number,
+): boolean {
+  return now - lastSeen < graceMs;
+}
+
 /** Is a detected face's bounding box big enough (as a fraction of the video
  *  frame) to treat as someone actually approaching the kiosk, not just
  *  passing through the shot? `wasClose` applies hysteresis: once close, the

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
-import { isFaceCloseEnough } from "@/lib/kiosk";
+import { isFaceCloseEnough, isWithinFaceLossGrace } from "@/lib/kiosk";
 
 // Real-time, in-browser face box. MediaPipe BlazeFace runs on every animation
 // frame and positions `boxRef` imperatively (no React re-render per frame, so it
@@ -13,6 +13,8 @@ import { isFaceCloseEnough } from "@/lib/kiosk";
 
 export type TrackerStatus = "loading" | "active" | "failed";
 export type Proximity = "none" | "far" | "ok";
+
+const LOST_GRACE_MS = 500; // hold last state through brief detection gaps
 
 export function useFaceTracker(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -35,6 +37,7 @@ export function useFaceTracker(
     let cancelled = false;
     let lastVideoTime = -1;
     let wasClose = false; // previous "close" decision, for proximity hysteresis
+    let lastSeen = 0; // performance.now() of the last frame with a detection
 
     function hideBox() {
       const el = boxRef.current;
@@ -80,12 +83,14 @@ export function useFaceTracker(
       raf = requestAnimationFrame(loop);
       const dets = result.detections;
       if (!dets || dets.length === 0) {
+        if (isWithinFaceLossGrace(lastSeen, performance.now(), LOST_GRACE_MS)) return;
         hideBox();
         if (canCaptureRef) canCaptureRef.current = false;
         wasClose = false;
         setProximity("none");
         return;
       }
+      lastSeen = performance.now();
       // Largest detection = nearest camera, matching the backend's face pick.
       let best = dets[0];
       for (const d of dets) {

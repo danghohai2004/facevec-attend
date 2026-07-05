@@ -44,13 +44,13 @@ function Clock({ now }: { now: Date | null }) {
   if (!now) return <div className="h-12 w-44" aria-hidden />; // reserve space
   return (
     <div className="text-right">
-      <div className="font-mono text-3xl font-bold tabular-nums leading-none text-white sm:text-4xl">
+      <div className="font-mono text-3xl font-bold tabular-nums leading-none text-foreground sm:text-4xl">
         {now.toLocaleTimeString("vi-VN", {
           hour: "2-digit",
           minute: "2-digit",
         })}
       </div>
-      <div className="mt-1 text-sm font-medium uppercase tracking-wide text-zinc-400 sm:text-base">
+      <div className="mt-1 text-sm font-medium uppercase tracking-wide text-muted-foreground sm:text-base">
         {now.toLocaleDateString("vi-VN", {
           weekday: "long",
           day: "2-digit",
@@ -62,34 +62,51 @@ function Clock({ now }: { now: Date | null }) {
   );
 }
 
-/** One solid full-width bar at the bottom — the single place all status goes.
- *  Priority: recognition result > warning hint > proximity hint >
- *  shift-window guidance > out-of-hours. Solid colors, no blur, uppercase —
- *  readable across a room.
+/** Ambient shift-window indicator shown centered in the header. Stable (changes
+ *  ~1/min), so it lives apart from the live bottom status bar. undefined = clock/
+ *  settings not ready yet → render nothing (the grid column collapses, no shift). */
+function ShiftBadge({ shiftWindow }: { shiftWindow: AttendanceKind | undefined }) {
+  if (shiftWindow === undefined) return null;
+  let cls = "bg-card text-foreground";
+  let label: React.ReactNode = "Ngoài giờ chấm công";
+  if (shiftWindow === "check_in") {
+    cls = "bg-poster-lime text-ink";
+    label = <><span aria-hidden>→ </span>Giờ vào ca</>;
+  } else if (shiftWindow === "check_out") {
+    cls = "bg-poster-cyan text-ink";
+    label = <><span aria-hidden>← </span>Giờ tan ca</>;
+  }
+  return (
+    <span
+      className={`justify-self-center rounded-[3px] border-2 border-foreground px-3 py-1 font-heading text-lg font-black uppercase tracking-tight shadow-brutal-sm sm:text-xl ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** One solid full-width bar for live, person-facing status at the bottom.
+ *  Priority: recognition result > warning hint > proximity hint > idle invite.
+ *  Solid colors, no blur, uppercase — readable across a room.
  *
- *  shiftWindow semantics: undefined = not known yet (clock hasn't ticked,
- *  settings still loading or failing) → neutral guidance, never claim
- *  "out of hours"; null = settings loaded and now is genuinely outside both
- *  windows. Non-scanning phases render the bar empty so the aria-live region
- *  doesn't announce text that contradicts the full-screen overlay above it. */
+ *  Non-scanning phases render the bar empty so the aria-live region doesn't
+ *  announce text that contradicts the full-screen overlay above it. */
 function StatusBar({
   phase,
   greeting,
   hint,
   proximity,
-  shiftWindow,
 }: {
   phase: KioskPhase;
   greeting: KioskState["greeting"];
   hint: string | null;
   proximity: Proximity;
-  shiftWindow: AttendanceKind | undefined;
 }) {
-  let barClass = "bg-zinc-900 text-zinc-400";
+  let barClass = "bg-card text-muted-foreground";
   let content: React.ReactNode = null;
 
   if (phase === "recognized" && greeting) {
-    barClass = "bg-green-600 text-white";
+    barClass = "bg-poster-lime text-ink";
     content = (
       <>
         <CheckCircle2 className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
@@ -99,7 +116,7 @@ function StatusBar({
       </>
     );
   } else if (phase === "scanning" && hint) {
-    barClass = "bg-red-700 text-white";
+    barClass = "bg-destructive text-white";
     content = (
       <>
         <AlertTriangle className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
@@ -107,36 +124,20 @@ function StatusBar({
       </>
     );
   } else if (phase === "scanning" && proximity === "far") {
-    barClass = "bg-amber-600 text-white";
+    barClass = "bg-poster-yellow text-ink";
     content = (
       <>
         <AlertTriangle className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
         <span>Đưa khuôn mặt lại gần hơn</span>
       </>
     );
-  } else if (phase === "scanning" && shiftWindow === "check_in") {
-    barClass = "bg-emerald-700 text-white";
-    content = (
-      <span>
-        <span aria-hidden>→ </span>Giờ vào ca — đưa khuôn mặt vào khung
-      </span>
-    );
-  } else if (phase === "scanning" && shiftWindow === "check_out") {
-    barClass = "bg-sky-700 text-white";
-    content = (
-      <span>
-        <span aria-hidden>← </span>Giờ tan ca — đưa khuôn mặt vào khung
-      </span>
-    );
-  } else if (phase === "scanning" && shiftWindow === undefined) {
-    content = <span>Đưa khuôn mặt vào khung để điểm danh</span>;
   } else if (phase === "scanning") {
-    content = <span>Ngoài giờ chấm công</span>;
+    content = <span>Đưa khuôn mặt vào khung để điểm danh</span>;
   }
 
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 z-20 flex min-h-20 items-center justify-center gap-4 border-t-2 border-zinc-800 px-8 py-4 text-center text-xl font-black uppercase tracking-tight sm:text-3xl ${barClass}`}
+      className={`absolute inset-x-0 bottom-0 z-20 flex min-h-20 items-center justify-center gap-4 border-t-2 border-foreground px-8 py-4 text-center font-heading text-xl font-black uppercase tracking-tight sm:text-3xl ${barClass}`}
       aria-live="polite"
     >
       {content}
@@ -232,13 +233,13 @@ export function KioskScreen() {
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
   });
-  // undefined = clock/settings not ready yet — StatusBar must not claim
-  // "out of hours" until the window is actually known.
+  // undefined = clock/settings not ready yet — ShiftBadge stays absent until
+  // the window is actually known.
   const shiftWindow =
     now && shiftQuery.data ? currentShiftWindow(now, shiftQuery.data) : undefined;
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-zinc-950 text-white">
+    <main className="dark relative min-h-[100dvh] overflow-hidden bg-background text-foreground">
       {/* Live camera fills the screen, shown bright and mirrored (selfie view). */}
       <video
         ref={videoRef}
@@ -256,12 +257,17 @@ export function KioskScreen() {
       {/* Fallback box from the backend model if the in-browser tracker failed. */}
       {showServerBox && <ServerFaceBox videoRef={videoRef} bbox={faceBox} />}
 
-      {/* Solid header bar: system identity left, clock right. */}
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b-2 border-zinc-800 bg-zinc-950 px-8 py-4">
-        <p className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+      {/* Header: identity left, shift-window center, clock right. grid-cols
+          [1fr_auto_1fr] keeps the center badge truly centered regardless of the
+          title/clock widths. */}
+      <header className="absolute inset-x-0 top-0 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b-2 border-foreground bg-background px-8 py-4">
+        <p className="justify-self-start rounded-[3px] border-2 border-foreground bg-poster-yellow px-3 py-1 font-heading text-2xl font-black uppercase tracking-tight text-ink shadow-brutal-sm sm:text-3xl">
           Chấm công
         </p>
-        <Clock now={now} />
+        <ShiftBadge shiftWindow={shiftWindow} />
+        <div className="justify-self-end">
+          <Clock now={now} />
+        </div>
       </header>
 
       <StatusBar
@@ -269,16 +275,17 @@ export function KioskScreen() {
         greeting={greeting}
         hint={hint}
         proximity={proximity}
-        shiftWindow={shiftWindow}
       />
 
       {/* Camera permission / hardware failure */}
       {phase === "camera_error" && (
         <Overlay>
-          <CameraOff className="h-20 w-20 text-amber-400" aria-hidden />
-          <div className="max-w-md">
-            <p className="text-3xl font-semibold">Không truy cập được camera</p>
-            <p className="mt-3 text-base text-zinc-400">
+          <CameraOff className="h-20 w-20 text-poster-yellow" aria-hidden />
+          <div>
+            <p className="font-heading text-3xl font-black uppercase tracking-tight">
+              Không truy cập được camera
+            </p>
+            <p className="mt-3 text-base text-muted-foreground">
               Vui lòng cấp quyền camera cho trình duyệt và tải lại trang.
             </p>
           </div>
@@ -288,18 +295,22 @@ export function KioskScreen() {
       {/* Booting the camera */}
       {phase === "initializing" && (
         <Overlay>
-          <Loader2 className="h-16 w-16 animate-spin text-emerald-400 motion-reduce:animate-none" aria-hidden />
-          <p className="text-2xl font-medium text-zinc-200">Đang khởi động camera…</p>
+          <Loader2 className="h-16 w-16 animate-spin text-poster-lime motion-reduce:animate-none" aria-hidden />
+          <p className="font-heading text-2xl font-black uppercase tracking-tight text-foreground">
+            Đang khởi động camera…
+          </p>
         </Overlay>
       )}
 
       {/* Socket dropped, auto-reconnecting */}
       {phase === "disconnected" && (
         <Overlay>
-          <WifiOff className="h-16 w-16 text-amber-400" aria-hidden />
+          <WifiOff className="h-16 w-16 text-poster-yellow" aria-hidden />
           <div>
-            <p className="text-2xl font-medium text-zinc-200">Mất kết nối máy chủ</p>
-            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-zinc-400">
+            <p className="font-heading text-2xl font-black uppercase tracking-tight text-foreground">
+              Mất kết nối máy chủ
+            </p>
+            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
               Đang kết nối lại…
             </p>
