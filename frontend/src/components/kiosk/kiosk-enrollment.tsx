@@ -210,7 +210,7 @@ function EnrollmentCapture({
         <Brackets />
       </div>
 
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b-2 border-foreground bg-background px-8 py-4">
+      <header className="absolute inset-x-4 top-4 z-20 flex items-center justify-between gap-4 rounded-lg border-2 border-foreground bg-background px-6 py-3 shadow-brutal">
         <p className="rounded-[3px] border-2 border-foreground bg-poster-cyan px-3 py-1 font-heading text-2xl font-black uppercase tracking-tight text-ink shadow-brutal-sm sm:text-3xl">
           Đăng ký
         </p>
@@ -220,7 +220,7 @@ function EnrollmentCapture({
       </header>
 
       <div
-        className={`absolute inset-x-0 bottom-0 z-20 flex min-h-20 items-center justify-center gap-4 border-t-2 border-foreground px-8 py-4 text-center font-heading text-xl font-black uppercase tracking-tight sm:text-3xl ${barClass}`}
+        className={`absolute bottom-4 left-1/2 z-20 flex min-h-20 max-w-[calc(100%-2rem)] w-max -translate-x-1/2 items-center justify-center gap-4 rounded-lg border-2 border-foreground px-8 py-4 text-center font-heading text-xl font-black uppercase tracking-tight shadow-brutal sm:text-3xl ${barClass}`}
         aria-live="polite"
       >
         <span>{statusText}</span>

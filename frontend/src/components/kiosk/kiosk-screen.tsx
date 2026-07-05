@@ -85,12 +85,12 @@ function ShiftBadge({ shiftWindow }: { shiftWindow: AttendanceKind | undefined }
   );
 }
 
-/** One solid full-width bar for live, person-facing status at the bottom.
- *  Priority: recognition result > warning hint > proximity hint > idle invite.
+/** One solid floating panel for live, person-facing status at the bottom.
+ *  Priority: recognition result > warning hint > proximity hint.
  *  Solid colors, no blur, uppercase — readable across a room.
  *
- *  Non-scanning phases render the bar empty so the aria-live region doesn't
- *  announce text that contradicts the full-screen overlay above it. */
+ *  When none of those priority states applies, render nothing so the aria-live
+ *  region doesn't announce text that contradicts the screen state. */
 function StatusBar({
   phase,
   greeting,
@@ -131,13 +131,13 @@ function StatusBar({
         <span>Đưa khuôn mặt lại gần hơn</span>
       </>
     );
-  } else if (phase === "scanning") {
-    content = <span>Đưa khuôn mặt vào khung để điểm danh</span>;
   }
+
+  if (!content) return null;
 
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 z-20 flex min-h-20 items-center justify-center gap-4 border-t-2 border-foreground px-8 py-4 text-center font-heading text-xl font-black uppercase tracking-tight sm:text-3xl ${barClass}`}
+      className={`absolute bottom-4 left-1/2 z-20 flex min-h-20 max-w-[calc(100%-2rem)] w-max -translate-x-1/2 items-center justify-center gap-4 rounded-lg border-2 border-foreground px-8 py-4 text-center font-heading text-xl font-black uppercase tracking-tight shadow-brutal sm:text-3xl ${barClass}`}
       aria-live="polite"
     >
       {content}
@@ -260,7 +260,7 @@ export function KioskScreen() {
       {/* Header: identity left, shift-window center, clock right. grid-cols
           [1fr_auto_1fr] keeps the center badge truly centered regardless of the
           title/clock widths. */}
-      <header className="absolute inset-x-0 top-0 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b-2 border-foreground bg-background px-8 py-4">
+      <header className="absolute inset-x-4 top-4 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-lg border-2 border-foreground bg-background px-6 py-3 shadow-brutal">
         <p className="justify-self-start rounded-[3px] border-2 border-foreground bg-poster-yellow px-3 py-1 font-heading text-2xl font-black uppercase tracking-tight text-ink shadow-brutal-sm sm:text-3xl">
           Chấm công
         </p>
