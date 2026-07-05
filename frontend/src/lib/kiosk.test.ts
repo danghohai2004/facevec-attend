@@ -9,6 +9,7 @@ import {
   recognitionWsUrl,
   attendanceKind,
   currentShiftWindow,
+  enrollmentUrl,
   isFaceCloseEnough,
   type KioskState,
 } from "./kiosk.ts";
@@ -116,5 +117,21 @@ const frame = { w: 1280, h: 720 };
 assert.equal(isFaceCloseEnough({ width: 100, height: 100 }, frame.w, frame.h), false); // far away, passing by
 assert.equal(isFaceCloseEnough({ width: 400, height: 350 }, frame.w, frame.h), true); // close enough
 assert.equal(isFaceCloseEnough({ width: 400, height: 350 }, 0, 0), false); // no frame dims yet
+// Hysteresis: a face in the 0.10–0.12 band flips on wasClose, so a face held
+// at the threshold stays "ok" instead of flickering ok↔far every frame.
+const band = { width: 320, height: 320 }; // ratio ~0.111, between keep and min
+assert.equal(isFaceCloseEnough(band, frame.w, frame.h, false), false); // must cross 0.12 to enter
+assert.equal(isFaceCloseEnough(band, frame.w, frame.h, true), true); // once close, stays close
+assert.equal(isFaceCloseEnough({ width: 280, height: 280 }, frame.w, frame.h, true), false); // below keep → far
+
+// enrollmentUrl: query string must survive spaces, unicode, and separators.
+{
+  const url = enrollmentUrl("Nguyễn A&B", "EMP 1004");
+  const qs = new URLSearchParams(url.split("?")[1]);
+  assert.equal(url.startsWith("/kiosk?mode=register"), true);
+  assert.equal(qs.get("mode"), "register");
+  assert.equal(qs.get("name"), "Nguyễn A&B");
+  assert.equal(qs.get("emp_code"), "EMP 1004");
+}
 
 console.log("kiosk.test.ts: all assertions passed");

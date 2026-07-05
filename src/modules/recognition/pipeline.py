@@ -100,6 +100,14 @@ async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
             )
             return
 
+        # Log the accepted cosine score so THRESHOLD can be tuned from real data
+        # later (see how much genuine matches clear 1.0 - THRESHOLD).
+        logger.info(
+            "recognized emp_id=%s score=%.4f",
+            person["emp_id"],
+            person.get("score", float("nan")),
+        )
+
         async with db_factory() as db:
             attendance_result = await log_attendance(db, person["emp_id"])
 
