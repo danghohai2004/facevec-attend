@@ -3,6 +3,20 @@
 import * as React from "react";
 
 const JPEG_QUALITY = 0.85;
+export const ENROLLMENT_COUNTDOWN_START = 3;
+
+export type EnrollmentCountdownEvent = "face_ok" | "face_lost" | "tick";
+
+/** Pure countdown transition used by the enrollment screen. */
+export function nextEnrollmentCountdown(
+  current: number | null,
+  event: EnrollmentCountdownEvent,
+): number | null {
+  if (event === "face_lost") return null;
+  if (event === "face_ok") return current ?? ENROLLMENT_COUNTDOWN_START;
+  if (current === null) return null;
+  return Math.max(0, current - 1);
+}
 
 /** Grab the current video frame as a JPEG File. Returns null if the video
  *  isn't producing pixels yet (no dimensions). The backend enrollment endpoint

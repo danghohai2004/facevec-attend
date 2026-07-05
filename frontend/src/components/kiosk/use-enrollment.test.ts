@@ -1,7 +1,24 @@
 // Runnable self-check for enrollment frame capture (no test runner in this project):
 //   node --experimental-strip-types src/components/kiosk/use-enrollment.test.ts
 import assert from "node:assert/strict";
-import { captureFrame } from "./use-enrollment.ts";
+import {
+  captureFrame,
+  nextEnrollmentCountdown,
+} from "./use-enrollment.ts";
+
+// Countdown starts at three, ticks to capture, and cancels if proximity is lost.
+let countdown: number | null = null;
+countdown = nextEnrollmentCountdown(countdown, "face_ok");
+assert.equal(countdown, 3);
+countdown = nextEnrollmentCountdown(countdown, "tick");
+assert.equal(countdown, 2);
+countdown = nextEnrollmentCountdown(countdown, "tick");
+assert.equal(countdown, 1);
+countdown = nextEnrollmentCountdown(countdown, "face_lost");
+assert.equal(countdown, null);
+assert.equal(nextEnrollmentCountdown(null, "tick"), null);
+assert.equal(nextEnrollmentCountdown(1, "tick"), 0);
+assert.equal(nextEnrollmentCountdown(0, "tick"), 0);
 
 // A video that is not producing pixels yet cannot be captured.
 assert.equal(
