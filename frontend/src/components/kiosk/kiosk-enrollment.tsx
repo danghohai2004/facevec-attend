@@ -93,6 +93,7 @@ function EnrollmentCapture({
 
   const idle =
     cameraPhase === "ready" &&
+    !isError &&
     !isPending &&
     !isSuccess;
 
