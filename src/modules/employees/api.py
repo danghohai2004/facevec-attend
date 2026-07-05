@@ -33,22 +33,28 @@ router = APIRouter(prefix="/api/employees", tags=["Employees"])
 async def api_register(
     name: str = Form(...),
     emp_code: str = Form(...),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
 ):
     # ponytail: local import avoids circular import — recognition module not yet wired
     from src.modules.recognition.extractor import extract_embeddings_from_bytes
 
-    contents = await file.read()
     MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # ponytail: chặn ảnh khổng lồ/decompression bomb
-    if len(contents) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, "Ảnh quá lớn (tối đa 5MB).")
-    try:
-        embeddings = await extract_embeddings_from_bytes(contents)
-    except ValueError:
-        raise HTTPException(400, "Không thể đọc file ảnh.")
-    if len(embeddings) != 1:
-        raise HTTPException(400, "Ảnh phải có đúng 1 khuôn mặt.")
+    # Multi-frame enrollment: store one embedding per usable burst frame so a
+    # single pose/lighting doesn't decide recognition. Skip frames with 0 or 2+
+    # faces (missed/ambiguous) instead of failing the whole enrollment over one
+    # bad frame; require at least one usable face overall.
+    embeddings: list[list[float]] = []
+    for upload in files:
+        contents = await upload.read()
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Ảnh quá lớn (tối đa 5MB).")
+        face_embeddings = await extract_embeddings_from_bytes(contents)
+        if len(face_embeddings) == 1:
+            embeddings.append(face_embeddings[0])
+
+    if not embeddings:
+        raise HTTPException(400, "Không nhận được khuôn mặt hợp lệ nào. Vui lòng thử lại.")
 
     qdrant = get_qdrant_client()
     employee, err = await register_employee(db, qdrant, name, emp_code, embeddings)

@@ -4,6 +4,10 @@ import * as React from "react";
 
 const JPEG_QUALITY = 0.85;
 export const ENROLLMENT_COUNTDOWN_START = 3;
+// Multi-frame enrollment: after the countdown, grab a short burst so the backend
+// stores several embeddings (varied micro-pose/lighting) instead of one.
+export const ENROLLMENT_BURST_COUNT = 5;
+export const ENROLLMENT_BURST_INTERVAL_MS = 400;
 
 export type EnrollmentCountdownEvent = "face_ok" | "face_lost" | "tick";
 

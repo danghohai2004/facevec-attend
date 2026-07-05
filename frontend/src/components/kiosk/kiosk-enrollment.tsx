@@ -7,6 +7,8 @@ import { CameraOff, CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import { Brackets, Overlay } from "@/components/kiosk/kiosk-chrome";
 import {
   captureFrame,
+  ENROLLMENT_BURST_COUNT,
+  ENROLLMENT_BURST_INTERVAL_MS,
   nextEnrollmentCountdown,
   useEnrollmentCamera,
 } from "@/components/kiosk/use-enrollment";
@@ -58,6 +60,7 @@ function EnrollmentCapture({
   const { phase: cameraPhase } = useEnrollmentCamera(videoRef);
   const { proximity } = useFaceTracker(videoRef, boxRef, canCaptureRef);
   const [countdown, setCountdown] = React.useState<number | null>(null);
+  const [capturing, setCapturing] = React.useState(false);
 
   const {
     error,
@@ -85,6 +88,7 @@ function EnrollmentCapture({
     if (!isError) return;
     const timeout = window.setTimeout(() => {
       submittedRef.current = false;
+      setCapturing(false);
       setCountdown(null);
       reset();
     }, ERROR_RESET_MS);
@@ -127,16 +131,41 @@ function EnrollmentCapture({
 
     const video = videoRef.current;
     if (!video) return;
-    const file = captureFrame(video);
-    if (!file) {
+    const first = captureFrame(video);
+    if (!first) {
+      // No pixels yet — retry the countdown instead of submitting a blank frame.
       const animationFrame = window.requestAnimationFrame(() => {
         setCountdown(nextEnrollmentCountdown(null, "face_ok"));
       });
       return () => window.cancelAnimationFrame(animationFrame);
     }
 
+    // Lock in, then collect a short burst. Count only usable (non-null) frames
+    // toward the target, but cap total attempts so a face lost mid-burst still
+    // submits what we have (>=1, since `first` is already in).
     submittedRef.current = true;
-    mutate({ name, empCode, files: [file] });
+    setCapturing(true);
+    const frames: File[] = [first];
+    let attempts = 1;
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      const current = videoRef.current;
+      const frame = current ? captureFrame(current) : null;
+      if (frame) frames.push(frame);
+      attempts += 1;
+      if (
+        frames.length >= ENROLLMENT_BURST_COUNT ||
+        attempts >= ENROLLMENT_BURST_COUNT * 2
+      ) {
+        window.clearInterval(interval);
+        if (!cancelled) mutate({ name, empCode, files: frames });
+      }
+    }, ENROLLMENT_BURST_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [countdown, empCode, mutate, name, proximity]);
 
   const errorMessage =
@@ -147,6 +176,7 @@ function EnrollmentCapture({
   const statusText = (() => {
     if (isPending) return "Đang đăng ký…";
     if (isError) return `Đăng ký thất bại — ${errorMessage}`;
+    if (capturing) return "Đang chụp…";
     if (proximity === "ok" && countdown !== null && countdown > 0) {
       return `Giữ yên… ${countdown}`;
     }
@@ -156,7 +186,7 @@ function EnrollmentCapture({
 
   const barClass = isError
     ? "bg-red-700 text-white"
-    : proximity === "ok" && countdown !== null && countdown > 0
+    : capturing || (proximity === "ok" && countdown !== null && countdown > 0)
       ? "bg-emerald-700 text-white"
       : proximity === "far"
         ? "bg-amber-600 text-white"
