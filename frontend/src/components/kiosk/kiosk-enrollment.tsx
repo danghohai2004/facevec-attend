@@ -102,7 +102,9 @@ function EnrollmentCapture({
 
     let interval: number | undefined;
     const animationFrame = window.requestAnimationFrame(() => {
-      setCountdown(nextEnrollmentCountdown(null, "face_ok"));
+      // Updater form: a brief proximity blip resumes the count instead of
+      // restarting at 3 (nextEnrollmentCountdown keeps a non-null current).
+      setCountdown((current) => nextEnrollmentCountdown(current, "face_ok"));
       interval = window.setInterval(() => {
         setCountdown((current) => nextEnrollmentCountdown(current, "tick"));
       }, 1000);

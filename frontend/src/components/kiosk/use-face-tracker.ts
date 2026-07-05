@@ -34,6 +34,7 @@ export function useFaceTracker(
     let raf = 0;
     let cancelled = false;
     let lastVideoTime = -1;
+    let wasClose = false; // previous "close" decision, for proximity hysteresis
 
     function hideBox() {
       const el = boxRef.current;
@@ -71,6 +72,7 @@ export function useFaceTracker(
         console.error("Face tracker inference failed, falling back to server box", err);
         hideBox();
         if (canCaptureRef) canCaptureRef.current = true;
+        wasClose = false;
         setProximity("none"); // clear any stuck "far" bar; fallback takes over
         setStatus("failed");
         return;
@@ -80,6 +82,7 @@ export function useFaceTracker(
       if (!dets || dets.length === 0) {
         hideBox();
         if (canCaptureRef) canCaptureRef.current = false;
+        wasClose = false;
         setProximity("none");
         return;
       }
@@ -94,7 +97,8 @@ export function useFaceTracker(
 
       const fw = video.videoWidth;
       const fh = video.videoHeight;
-      const close = isFaceCloseEnough(bb, fw, fh);
+      const close = isFaceCloseEnough(bb, fw, fh, wasClose);
+      wasClose = close;
       if (canCaptureRef) canCaptureRef.current = close;
       setProximity(close ? "ok" : "far");
       const cw = video.clientWidth;

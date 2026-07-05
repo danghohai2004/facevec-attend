@@ -111,18 +111,25 @@ function inRange(current: number, start: number, end: number): boolean {
 // counts as "close enough to mean it". Tune by testing at the camera's actual
 // mount distance; there's no principled derivation, it's a physical heuristic.
 export const MIN_FACE_AREA_RATIO = 0.12;
+// Once close, keep treating the face as close until it shrinks past this lower
+// ratio. Without this band a face held right at MIN_FACE_AREA_RATIO flickers
+// "ok"↔"far" frame-to-frame (MediaPipe runs per frame), which restarts the
+// enrollment countdown forever. Hysteresis makes the decision stable.
+export const KEEP_FACE_AREA_RATIO = 0.1;
 
 /** Is a detected face's bounding box big enough (as a fraction of the video
  *  frame) to treat as someone actually approaching the kiosk, not just
- *  passing through the shot? */
+ *  passing through the shot? `wasClose` applies hysteresis: once close, the
+ *  face stays "close" until it drops below the lower keep-threshold. */
 export function isFaceCloseEnough(
   bbox: { width: number; height: number },
   frameWidth: number,
   frameHeight: number,
+  wasClose = false,
 ): boolean {
   if (!frameWidth || !frameHeight) return false;
   const ratio = (bbox.width * bbox.height) / (frameWidth * frameHeight);
-  return ratio >= MIN_FACE_AREA_RATIO;
+  return ratio >= (wasClose ? KEEP_FACE_AREA_RATIO : MIN_FACE_AREA_RATIO);
 }
 
 /** Which shift window "now" falls in, so the kiosk can hint check-in vs check-out
