@@ -220,3 +220,15 @@ export function recognitionWsUrl(apiBaseUrl: string, clientId: string): string {
   const wsBase = apiBaseUrl.replace(/^http/, "ws").replace(/\/+$/, "");
   return `${wsBase}/ws/recognition/${encodeURIComponent(clientId)}`;
 }
+
+/** Build the kiosk registration deep-link. Query params carry the employee
+ *  name + code to the /kiosk page; URLSearchParams safely preserves spaces,
+ *  unicode, and separators in either value. */
+export function enrollmentUrl(name: string, empCode: string): string {
+  const params = new URLSearchParams({
+    mode: "register",
+    name,
+    emp_code: empCode,
+  });
+  return `/kiosk?${params.toString()}`;
+}
