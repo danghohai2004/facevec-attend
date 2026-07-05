@@ -35,10 +35,6 @@ export function ShiftSettingsForm() {
         <CardTitle>Attendance Time Windows</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        <p className="text-sm text-muted-foreground">
-          Define valid time windows for check-ins and check-outs. These settings
-          are applied to all attendance API calls.
-        </p>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from src.platform.queue import FrameQueue
 from src.platform.realtime.manager import ConnectionManager
 from src.modules.antispoofing.service import LivenessChecker
-from src.modules.recognition.extractor import extract_embedding_from_frame
+from src.modules.recognition.extractor import extract_largest_face
 from src.modules.recognition.identifier import identify_face
 
 logger = logging.getLogger(__name__)
@@ -72,25 +72,32 @@ async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
         nparr = np.frombuffer(item.frame, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
-            return None, "no_face"
-        if not checker.check(item.frame):  # checker expects bytes
-            return None, "spoof"
-        emb = extract_embedding_from_frame(img)
-        if emb is None:
-            return None, "no_face"
-        return emb, None
+            return None, None, "no_face"
+        result = extract_largest_face(img)
+        if result is None:
+            return None, None, "no_face"
+        emb, bbox = result
+        # liveness needs the face bbox, so it runs after detection
+        if not checker.check(img, bbox):
+            return None, None, "spoof"
+        return emb, bbox, None
 
     try:
-        embedding, early_status = await loop.run_in_executor(_executor, _cpu_work)
+        embedding, bbox, early_status = await loop.run_in_executor(_executor, _cpu_work)
         ts = datetime.now(timezone.utc).isoformat()
 
         if early_status:
             await manager.send(item.client_id, {"status": early_status, "timestamp": ts})
             return
 
+        # bbox is present here (a face was detected) — send it so the kiosk can
+        # draw the box on the face even before recognition resolves.
         person = await identify_face(qdrant, embedding, threshold)
         if person is None:
-            await manager.send(item.client_id, {"status": "unknown", "timestamp": ts})
+            await manager.send(
+                item.client_id,
+                {"status": "unknown", "bbox": bbox, "timestamp": ts},
+            )
             return
 
         async with db_factory() as db:
@@ -101,6 +108,7 @@ async def _process(item, qdrant, db_factory, manager, checker, threshold, loop):
             "emp_id": person["emp_id"],
             "name": person["name"],
             "attendance": attendance_result,
+            "bbox": bbox,
             "timestamp": ts,  # reuse ts captured before CPU work
         })
     except Exception:

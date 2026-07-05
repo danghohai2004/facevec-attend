@@ -31,3 +31,38 @@ class AttendanceCheckResponse(BaseModel):
     message: str
     check_type: str
     log: AttendanceLogOut | None = None
+
+
+class SummaryDeltas(BaseModel):
+    todays_attendance: float | None
+    average_working_hours: float | None
+    on_time_rate: float | None
+
+
+class SummaryStatsResponse(BaseModel):
+    total_employees: int
+    todays_attendance: int
+    average_working_hours: float
+    on_time_rate: float
+    deltas: SummaryDeltas
+
+
+class MonthlyStatItem(BaseModel):
+    month: int
+    attendance: int
+    working_hours: float
+    average_hours: float
+
+
+class MonthlyStatsResponse(BaseModel):
+    available_years: list[int]
+    items: list[MonthlyStatItem]
+
+
+class DailyStatItem(BaseModel):
+    day: int
+    average_hours: float
+
+
+class DailyStatsResponse(BaseModel):
+    items: list[DailyStatItem]

@@ -1,4 +1,5 @@
 from datetime import datetime, date, time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
@@ -7,7 +8,8 @@ import src.modules.employees.models  # noqa: F401 — ensure Employee in SQLAlch
 from src.modules.attendance import service as attendance_service
 from src.modules.attendance.service import (
     _is_time_in_range, _normalize_shifts_time, check_in, check_out,
-    get_current_time, log_attendance,
+    get_current_time, get_daily_stats, get_monthly_stats, get_summary_stats,
+    log_attendance,
 )
 
 
@@ -247,3 +249,208 @@ async def test_check_out_persists_naive_local_time_for_comparison():
     assert returned_log is log
     assert log.checkout_time == datetime(2026, 7, 1, 18, 0)
     assert log.checkout_time.tzinfo is None
+
+
+@pytest.mark.asyncio
+async def test_get_summary_stats_calculates_today_and_day_over_day_deltas(
+    monkeypatch,
+):
+    fixed_now = datetime(
+        2026,
+        7,
+        3,
+        9,
+        0,
+        tzinfo=attendance_service.BUSINESS_TIMEZONE,
+    )
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz == attendance_service.BUSINESS_TIMEZONE
+            return fixed_now
+
+    monkeypatch.setattr(attendance_service, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        attendance_service,
+        "get_shift_settings",
+        AsyncMock(
+            return_value=(
+                {
+                    "check_in_start": time(8, 0),
+                    "check_in_end": time(9, 0),
+                    "check_out_start": time(17, 0),
+                    "check_out_end": time(19, 0),
+                },
+                None,
+            )
+        ),
+    )
+
+    employee_count_result = MagicMock()
+    employee_count_result.scalar_one.return_value = 3
+    aggregate_result = MagicMock()
+    aggregate_result.all.return_value = [
+        SimpleNamespace(
+            working_date=date(2026, 7, 2),
+            attendance=2,
+            average_hours=8.0,
+            on_time=2,
+        ),
+        SimpleNamespace(
+            working_date=date(2026, 7, 3),
+            attendance=3,
+            average_hours=7.5,
+            on_time=2,
+        ),
+    ]
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[employee_count_result, aggregate_result]
+    )
+
+    response, err = await get_summary_stats(db)
+
+    assert err is None
+    assert response.total_employees == 3
+    assert response.todays_attendance == 3
+    assert response.average_working_hours == pytest.approx(7.5)
+    assert response.on_time_rate == pytest.approx(200 / 3)
+    assert response.deltas.todays_attendance == pytest.approx(50.0)
+    assert response.deltas.average_working_hours == pytest.approx(-6.25)
+    assert response.deltas.on_time_rate == pytest.approx(-100 / 3)
+
+    employee_sql = str(db.execute.await_args_list[0].args[0])
+    aggregate_sql = str(db.execute.await_args_list[1].args[0])
+    assert "employees" in employee_sql
+    assert "attendance_logs.working_date" in aggregate_sql
+    assert "CAST(attendance_logs.checkin_time AS TIME)" in aggregate_sql
+
+
+@pytest.mark.asyncio
+async def test_get_summary_stats_uses_zero_values_and_null_deltas_without_yesterday(
+    monkeypatch,
+):
+    fixed_now = datetime(
+        2026,
+        7,
+        3,
+        9,
+        0,
+        tzinfo=attendance_service.BUSINESS_TIMEZONE,
+    )
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(attendance_service, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        attendance_service,
+        "get_shift_settings",
+        AsyncMock(return_value=(attendance_service._DEFAULT_SHIFT, None)),
+    )
+
+    employee_count_result = MagicMock()
+    employee_count_result.scalar_one.return_value = 0
+    aggregate_result = MagicMock()
+    aggregate_result.all.return_value = []
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[employee_count_result, aggregate_result]
+    )
+
+    response, err = await get_summary_stats(db)
+
+    assert err is None
+    assert response.model_dump() == {
+        "total_employees": 0,
+        "todays_attendance": 0,
+        "average_working_hours": 0.0,
+        "on_time_rate": 0.0,
+        "deltas": {
+            "todays_attendance": None,
+            "average_working_hours": None,
+            "on_time_rate": None,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_monthly_stats_returns_available_years_and_sparse_months():
+    years_result = MagicMock()
+    years_result.scalars.return_value.all.return_value = [2025, 2026]
+    monthly_result = MagicMock()
+    monthly_result.all.return_value = [
+        SimpleNamespace(
+            month=1,
+            attendance=2,
+            working_hours=15.25,
+            average_hours=7.625,
+        ),
+        SimpleNamespace(
+            month=7,
+            attendance=1,
+            working_hours=None,
+            average_hours=None,
+        ),
+    ]
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[years_result, monthly_result])
+
+    response, err = await get_monthly_stats(db, year=2026)
+
+    assert err is None
+    assert response.model_dump() == {
+        "available_years": [2025, 2026],
+        "items": [
+            {
+                "month": 1,
+                "attendance": 2,
+                "working_hours": 15.25,
+                "average_hours": 7.6,
+            },
+            {
+                "month": 7,
+                "attendance": 1,
+                "working_hours": 0.0,
+                "average_hours": 0.0,
+            },
+        ],
+    }
+
+    years_sql = str(db.execute.await_args_list[0].args[0])
+    monthly_sql = str(db.execute.await_args_list[1].args[0])
+    assert "DISTINCT" in years_sql
+    assert "EXTRACT(year FROM attendance_logs.working_date)" in years_sql
+    assert "EXTRACT(epoch FROM attendance_logs.working_duration)" in monthly_sql
+    assert "GROUP BY EXTRACT(month FROM attendance_logs.working_date)" in monthly_sql
+
+
+@pytest.mark.asyncio
+async def test_get_daily_stats_returns_sparse_days_and_ignores_open_log_hours():
+    daily_result = MagicMock()
+    daily_result.all.return_value = [
+        SimpleNamespace(day=1, average_hours=7.556),
+        SimpleNamespace(day=3, average_hours=None),
+    ]
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=daily_result)
+
+    response, err = await get_daily_stats(db, year=2026, month=7)
+
+    assert err is None
+    assert response.model_dump() == {
+        "items": [
+            {"day": 1, "average_hours": 7.56},
+            {"day": 3, "average_hours": 0.0},
+        ]
+    }
+
+    daily_sql = str(db.execute.await_args.args[0])
+    assert "EXTRACT(epoch FROM attendance_logs.working_duration)" in daily_sql
+    assert "EXTRACT(year FROM attendance_logs.working_date)" in daily_sql
+    assert "EXTRACT(month FROM attendance_logs.working_date)" in daily_sql
+    assert "GROUP BY EXTRACT(day FROM attendance_logs.working_date)" in daily_sql
+    assert "working_duration IS NOT NULL" not in daily_sql

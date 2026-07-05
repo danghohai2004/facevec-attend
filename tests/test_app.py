@@ -8,7 +8,7 @@ from src.modules.antispoofing.service import LivenessChecker, PassThroughChecker
 
 
 class RealLivenessChecker(LivenessChecker):
-    def check(self, frame: bytes) -> bool:
+    def check(self, img, bbox) -> bool:
         return False
 
 

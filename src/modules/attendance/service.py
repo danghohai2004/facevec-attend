@@ -1,11 +1,22 @@
 import logging
-from datetime import datetime, time, date
+from datetime import date, datetime, time, timedelta
+from io import BytesIO
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, func
+from openpyxl import Workbook
+from sqlalchemy import Time, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.attendance.models import AttendanceLog, ShiftSettings
+from src.modules.attendance.schemas import (
+    DailyStatItem,
+    DailyStatsResponse,
+    MonthlyStatItem,
+    MonthlyStatsResponse,
+    SummaryDeltas,
+    SummaryStatsResponse,
+)
+from src.modules.employees.models import Employee
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +56,16 @@ def _normalize_shifts_time(shifts) -> dict:
         "check_out_start": shifts.check_out_start,
         "check_out_end": shifts.check_out_end,
     }
+
+
+def _working_hours_expression():
+    return func.extract("epoch", AttendanceLog.working_duration) / 3600.0
+
+
+def _percent_change(current: float, previous: float) -> float | None:
+    if previous == 0:
+        return None
+    return (current - previous) / previous * 100
 
 
 async def get_shift_settings(db: AsyncSession) -> tuple[ShiftSettings | dict, str | None]:
@@ -225,3 +246,238 @@ async def list_attendance_logs(
     except Exception:
         logger.exception("Listing attendance logs failed")
         return [], 0, INTERNAL_ERROR
+
+
+async def get_summary_stats(
+    db: AsyncSession,
+) -> tuple[SummaryStatsResponse | None, str | None]:
+    try:
+        shifts, err = await get_shift_settings(db)
+        if err:
+            return None, err
+        shift = _normalize_shifts_time(shifts)
+
+        today = datetime.now(BUSINESS_TIMEZONE).date()
+        yesterday = today - timedelta(days=1)
+
+        total_employees = (
+            await db.execute(select(func.count()).select_from(Employee))
+        ).scalar_one()
+
+        hours = _working_hours_expression()
+        result = await db.execute(
+            select(
+                AttendanceLog.working_date,
+                func.count().label("attendance"),
+                func.avg(hours).label("average_hours"),
+                func.count()
+                .filter(
+                    cast(AttendanceLog.checkin_time, Time)
+                    <= shift["check_in_end"]
+                )
+                .label("on_time"),
+            )
+            .where(AttendanceLog.working_date.in_((yesterday, today)))
+            .group_by(AttendanceLog.working_date)
+        )
+        stats_by_date = {row.working_date: row for row in result.all()}
+
+        def values_for(day: date) -> tuple[int, float, float]:
+            row = stats_by_date.get(day)
+            if row is None:
+                return 0, 0.0, 0.0
+            attendance = int(row.attendance)
+            average_hours = float(row.average_hours or 0.0)
+            on_time_rate = (
+                float(row.on_time) / attendance * 100
+                if attendance
+                else 0.0
+            )
+            return attendance, average_hours, on_time_rate
+
+        today_attendance, today_average, today_on_time = values_for(today)
+        yesterday_attendance, yesterday_average, yesterday_on_time = (
+            values_for(yesterday)
+        )
+
+        return SummaryStatsResponse(
+            total_employees=total_employees,
+            todays_attendance=today_attendance,
+            average_working_hours=today_average,
+            on_time_rate=today_on_time,
+            deltas=SummaryDeltas(
+                todays_attendance=_percent_change(
+                    today_attendance,
+                    yesterday_attendance,
+                ),
+                average_working_hours=_percent_change(
+                    today_average,
+                    yesterday_average,
+                ),
+                on_time_rate=_percent_change(
+                    today_on_time,
+                    yesterday_on_time,
+                ),
+            ),
+        ), None
+    except Exception:
+        logger.exception("Loading attendance summary statistics failed")
+        return None, INTERNAL_ERROR
+
+
+async def get_monthly_stats(
+    db: AsyncSession,
+    year: int,
+) -> tuple[MonthlyStatsResponse | None, str | None]:
+    try:
+        year_expression = func.extract("year", AttendanceLog.working_date)
+        years_result = await db.execute(
+            select(year_expression.label("year"))
+            .distinct()
+            .order_by(year_expression)
+        )
+        available_years = [
+            int(value) for value in years_result.scalars().all()
+        ]
+
+        month_expression = func.extract("month", AttendanceLog.working_date)
+        hours = _working_hours_expression()
+        result = await db.execute(
+            select(
+                month_expression.label("month"),
+                func.count().label("attendance"),
+                func.sum(hours).label("working_hours"),
+                func.avg(hours).label("average_hours"),
+            )
+            .where(year_expression == year)
+            .group_by(month_expression)
+            .order_by(month_expression)
+        )
+        items = [
+            MonthlyStatItem(
+                month=int(row.month),
+                attendance=int(row.attendance),
+                working_hours=float(row.working_hours or 0.0),
+                average_hours=round(float(row.average_hours or 0.0), 1),
+            )
+            for row in result.all()
+        ]
+        return MonthlyStatsResponse(
+            available_years=available_years,
+            items=items,
+        ), None
+    except Exception:
+        logger.exception("Loading monthly attendance statistics failed")
+        return None, INTERNAL_ERROR
+
+
+def build_report_workbook(employees, logs, check_in_end: time) -> bytes:
+    """Pure workbook builder — Summary sheet (one row per employee, including
+    zero-attendance ones) + Detail sheet (one row per log)."""
+    by_emp = {e.emp_id: e for e in employees}
+    stats = {e.emp_id: {"days": set(), "hours": 0.0, "late": 0} for e in employees}
+    for log in logs:
+        s = stats.get(log.emp_id)
+        if s is None:
+            continue
+        s["days"].add(log.working_date)
+        if log.working_duration is not None:
+            s["hours"] += log.working_duration.total_seconds() / 3600
+        if log.checkin_time.time() > check_in_end:
+            s["late"] += 1
+
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "Summary"
+    summary.append(["Employee Code", "Name", "Days Worked", "Total Hours", "Late Count"])
+    for e in employees:
+        s = stats[e.emp_id]
+        summary.append([e.emp_code, e.name, len(s["days"]), round(s["hours"], 2), s["late"]])
+
+    detail = wb.create_sheet("Detail")
+    detail.append(["Employee Code", "Name", "Date", "Check-in", "Check-out", "Hours"])
+    for log in logs:
+        e = by_emp.get(log.emp_id)
+        if e is None:
+            continue
+        detail.append([
+            e.emp_code,
+            e.name,
+            log.working_date.isoformat(),
+            log.checkin_time.strftime("%H:%M:%S"),
+            log.checkout_time.strftime("%H:%M:%S") if log.checkout_time else "",
+            round(log.working_duration.total_seconds() / 3600, 2)
+            if log.working_duration is not None
+            else "",
+        ])
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+async def get_monthly_report(
+    db: AsyncSession,
+    year: int,
+    month: int,
+) -> tuple[bytes | None, str | None]:
+    try:
+        shifts, err = await get_shift_settings(db)
+        if err:
+            return None, err
+        shift = _normalize_shifts_time(shifts)
+
+        employees = (
+            await db.execute(select(Employee).order_by(Employee.emp_code))
+        ).scalars().all()
+        # ponytail: no pagination — kiosk-scale data, hundreds of logs/month
+        logs = (
+            await db.execute(
+                select(AttendanceLog)
+                .where(
+                    func.extract("year", AttendanceLog.working_date) == year,
+                    func.extract("month", AttendanceLog.working_date) == month,
+                )
+                .order_by(AttendanceLog.emp_id, AttendanceLog.working_date)
+            )
+        ).scalars().all()
+
+        return build_report_workbook(employees, logs, shift["check_in_end"]), None
+    except Exception:
+        logger.exception("Building monthly attendance report failed")
+        return None, INTERNAL_ERROR
+
+
+async def get_daily_stats(
+    db: AsyncSession,
+    year: int,
+    month: int,
+) -> tuple[DailyStatsResponse | None, str | None]:
+    try:
+        year_expression = func.extract("year", AttendanceLog.working_date)
+        month_expression = func.extract("month", AttendanceLog.working_date)
+        day_expression = func.extract("day", AttendanceLog.working_date)
+        hours = _working_hours_expression()
+        result = await db.execute(
+            select(
+                day_expression.label("day"),
+                func.avg(hours).label("average_hours"),
+            )
+            .where(
+                year_expression == year,
+                month_expression == month,
+            )
+            .group_by(day_expression)
+            .order_by(day_expression)
+        )
+        items = [
+            DailyStatItem(
+                day=int(row.day),
+                average_hours=round(float(row.average_hours or 0.0), 2),
+            )
+            for row in result.all()
+        ]
+        return DailyStatsResponse(items=items), None
+    except Exception:
+        logger.exception("Loading daily attendance statistics failed")
+        return None, INTERNAL_ERROR

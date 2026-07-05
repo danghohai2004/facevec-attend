@@ -1,21 +1,10 @@
-import {
-  Clock3,
-  LayoutDashboard,
-  Settings,
-  Users,
-  Video,
-} from "lucide-react";
+import { Clock3, LayoutDashboard, Users } from "lucide-react";
 
 export const navItems = [
   {
     title: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
-  },
-  {
-    title: "Attendance",
-    href: "/attendance",
-    icon: Video,
   },
   {
     title: "Employees",
@@ -26,11 +15,5 @@ export const navItems = [
     title: "Shift Settings",
     href: "/shifts",
     icon: Clock3,
-  },
-  {
-    title: "System Settings",
-    href: "/settings",
-    icon: Settings,
-    disabled: true,
   },
 ];

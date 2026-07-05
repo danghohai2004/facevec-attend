@@ -236,7 +236,7 @@ export function EmployeeRegistration() {
 
           <div className="space-y-4">
             <div className="space-y-3">
-              <div className="overflow-hidden rounded-xl border bg-muted/40">
+              <div className="overflow-hidden rounded-[3px] border-2 border-foreground bg-muted shadow-brutal-sm">
                 <Webcam
                   ref={webcamRef}
                   audio={false}
@@ -274,13 +274,13 @@ export function EmployeeRegistration() {
                   {files.map((file, index) => (
                     <div
                       key={`${file.name}-${index}`}
-                      className="group relative overflow-hidden rounded-lg border bg-muted/40"
+                      className="group relative overflow-hidden rounded-[3px] border-2 border-foreground bg-muted"
                     >
                       <CapturedFramePreview file={file} index={index} />
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
-                        className="absolute right-1 top-1 rounded-full bg-background/80 px-2 py-0.5 text-[10px] opacity-0 transition group-hover:opacity-100"
+                        className="absolute top-1 right-1 rounded-[3px] border-2 border-foreground bg-destructive px-2 py-0.5 text-[10px] font-bold text-white opacity-0 transition group-hover:opacity-100"
                       >
                         Remove
                       </button>

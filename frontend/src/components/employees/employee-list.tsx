@@ -94,7 +94,7 @@ export function EmployeeList() {
         </div>
       </div>
 
-      <div className="rounded-xl border">
+      <div className="rounded-[3px] border-2 border-foreground shadow-brutal-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -151,7 +151,7 @@ export function EmployeeList() {
       </div>
 
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs font-bold text-muted-foreground">
           Page {currentPage} of {totalPages}
         </p>
         <div className="flex gap-2">
