@@ -10,7 +10,10 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useRecognition } from "@/components/kiosk/use-recognition";
-import { useFaceTracker } from "@/components/kiosk/use-face-tracker";
+import {
+  useFaceTracker,
+  type Proximity,
+} from "@/components/kiosk/use-face-tracker";
 import {
   currentShiftWindow,
   type AttendanceKind,
@@ -59,8 +62,9 @@ function Clock({ now }: { now: Date | null }) {
 }
 
 /** One solid full-width bar at the bottom — the single place all status goes.
- *  Priority: recognition result > warning hint > shift-window guidance >
- *  out-of-hours. Solid colors, no blur, uppercase — readable across a room.
+ *  Priority: recognition result > warning hint > proximity hint >
+ *  shift-window guidance > out-of-hours. Solid colors, no blur, uppercase —
+ *  readable across a room.
  *
  *  shiftWindow semantics: undefined = not known yet (clock hasn't ticked,
  *  settings still loading or failing) → neutral guidance, never claim
@@ -71,11 +75,13 @@ function StatusBar({
   phase,
   greeting,
   hint,
+  proximity,
   shiftWindow,
 }: {
   phase: KioskPhase;
   greeting: KioskState["greeting"];
   hint: string | null;
+  proximity: Proximity;
   shiftWindow: AttendanceKind | undefined;
 }) {
   let barClass = "bg-zinc-900 text-zinc-400";
@@ -97,6 +103,14 @@ function StatusBar({
       <>
         <AlertTriangle className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
         <span>{hint}</span>
+      </>
+    );
+  } else if (phase === "scanning" && proximity === "far") {
+    barClass = "bg-amber-600 text-white";
+    content = (
+      <>
+        <AlertTriangle className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" aria-hidden />
+        <span>Đưa khuôn mặt lại gần hơn</span>
       </>
     );
   } else if (phase === "scanning" && shiftWindow === "check_in") {
@@ -218,11 +232,16 @@ function Overlay({ children }: { children: React.ReactNode }) {
 export function KioskScreen() {
   // True once a tracked face is close enough to mean it, not just passing
   // through the shot. Written by useFaceTracker, read by useRecognition to
-  // gate capture — a plain ref so proximity changes don't cause re-renders.
+  // gate capture without per-frame re-renders; only proximity transitions
+  // update React state for the status bar.
   const canCaptureRef = React.useRef(true);
   const { videoRef, phase, greeting, hint, faceBox } = useRecognition(canCaptureRef);
   const boxRef = React.useRef<HTMLDivElement>(null);
-  const trackerStatus = useFaceTracker(videoRef, boxRef, canCaptureRef);
+  const { status: trackerStatus, proximity } = useFaceTracker(
+    videoRef,
+    boxRef,
+    canCaptureRef,
+  );
   const showServerBox = trackerStatus === "failed" && faceBox && phase !== "recognized";
 
   const now = useNow();
@@ -261,14 +280,9 @@ export function KioskScreen() {
 
       {/* Solid header bar: system identity left, clock right. */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b-2 border-zinc-800 bg-zinc-950 px-8 py-4">
-        <div>
-          <p className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
-            Chấm công
-          </p>
-          <p className="text-sm font-medium text-zinc-400 sm:text-base">
-            Hệ thống điểm danh khuôn mặt
-          </p>
-        </div>
+        <p className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+          Chấm công
+        </p>
         <Clock now={now} />
       </header>
 
@@ -276,6 +290,7 @@ export function KioskScreen() {
         phase={phase}
         greeting={greeting}
         hint={hint}
+        proximity={proximity}
         shiftWindow={shiftWindow}
       />
 

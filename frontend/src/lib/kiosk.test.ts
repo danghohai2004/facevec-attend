@@ -32,6 +32,13 @@ s = reduceKiosk(s, {
 assert.deepEqual(s.faceBox, [0.3, 0.2, 0.6, 0.7]);
 // no_face clears the box.
 assert.equal(reduceKiosk(s, { type: "message", message: { status: "no_face", timestamp: "t" } }).faceBox, null);
+// A spoof result is silent and clears the box so normal shift guidance can show.
+const spoofed = reduceKiosk(s, {
+  type: "message",
+  message: { status: "spoof", timestamp: "t" },
+});
+assert.equal(spoofed.hint, null);
+assert.equal(spoofed.faceBox, null);
 
 // A recognition greeting pauses capture and shows Vietnamese copy.
 s = reduceKiosk(s, {

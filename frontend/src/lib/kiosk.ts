@@ -181,7 +181,7 @@ export function reduceKiosk(state: KioskState, event: KioskEvent): KioskState {
         case "unknown":
           return { ...state, hint: "Không tìm thấy khuôn mặt", faceBox: bbox };
         case "spoof":
-          return { ...state, hint: "Vui lòng nhìn thẳng vào camera", faceBox: null };
+          return { ...state, hint: null, faceBox: null };
         case "no_face":
           return { ...state, hint: null, faceBox: null };
         case "error":

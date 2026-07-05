@@ -12,6 +12,7 @@ import { isFaceCloseEnough } from "@/lib/kiosk";
 // Assets are self-hosted under /public/mediapipe so the kiosk works offline.
 
 export type TrackerStatus = "loading" | "active" | "failed";
+export type Proximity = "none" | "far" | "ok";
 
 export function useFaceTracker(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -24,8 +25,9 @@ export function useFaceTracker(
   // as it did before the proximity gate existed — no in-browser detection
   // means no cheap way to gate, so we fall back to sending every tick.
   canCaptureRef?: React.RefObject<boolean>,
-): TrackerStatus {
+): { status: TrackerStatus; proximity: Proximity } {
   const [status, setStatus] = React.useState<TrackerStatus>("loading");
+  const [proximity, setProximity] = React.useState<Proximity>("none");
 
   React.useEffect(() => {
     let detector: FaceDetector | null = null;
@@ -69,6 +71,7 @@ export function useFaceTracker(
         console.error("Face tracker inference failed, falling back to server box", err);
         hideBox();
         if (canCaptureRef) canCaptureRef.current = true;
+        setProximity("none"); // clear any stuck "far" bar; fallback takes over
         setStatus("failed");
         return;
       }
@@ -77,6 +80,7 @@ export function useFaceTracker(
       if (!dets || dets.length === 0) {
         hideBox();
         if (canCaptureRef) canCaptureRef.current = false;
+        setProximity("none");
         return;
       }
       // Largest detection = nearest camera, matching the backend's face pick.
@@ -90,7 +94,9 @@ export function useFaceTracker(
 
       const fw = video.videoWidth;
       const fh = video.videoHeight;
-      if (canCaptureRef) canCaptureRef.current = isFaceCloseEnough(bb, fw, fh);
+      const close = isFaceCloseEnough(bb, fw, fh);
+      if (canCaptureRef) canCaptureRef.current = close;
+      setProximity(close ? "ok" : "far");
       const cw = video.clientWidth;
       const ch = video.clientHeight;
       // object-cover: frame scaled to cover, centered, cropped.
@@ -157,5 +163,5 @@ export function useFaceTracker(
     };
   }, [videoRef, boxRef, canCaptureRef]);
 
-  return status;
+  return { status, proximity };
 }
