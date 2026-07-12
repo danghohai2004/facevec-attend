@@ -180,7 +180,7 @@ def test_register_returns_conflict_for_duplicate_emp_code(
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "Employee code already exists."}
+    assert response.json() == {"detail": "Mã nhân viên đã tồn tại."}
     register_employee.assert_awaited_once()
 
 

@@ -11,6 +11,7 @@ import {
   currentShiftWindow,
   enrollmentUrl,
   isFaceCloseEnough,
+  isWithinFaceLossGrace,
   type KioskState,
 } from "./kiosk.ts";
 
@@ -123,6 +124,12 @@ const band = { width: 320, height: 320 }; // ratio ~0.111, between keep and min
 assert.equal(isFaceCloseEnough(band, frame.w, frame.h, false), false); // must cross 0.12 to enter
 assert.equal(isFaceCloseEnough(band, frame.w, frame.h, true), true); // once close, stays close
 assert.equal(isFaceCloseEnough({ width: 280, height: 280 }, frame.w, frame.h, true), false); // below keep → far
+
+// A brief MediaPipe detection dropout keeps the last face state. Once the
+// grace boundary is reached, normal lost-face cleanup can run.
+assert.equal(isWithinFaceLossGrace(1_000, 1_100, 500), true);
+assert.equal(isWithinFaceLossGrace(1_000, 1_499, 500), true);
+assert.equal(isWithinFaceLossGrace(1_000, 1_500, 500), false);
 
 // enrollmentUrl: query string must survive spaces, unicode, and separators.
 {

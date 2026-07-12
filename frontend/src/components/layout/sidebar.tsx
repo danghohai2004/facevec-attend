@@ -11,14 +11,9 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col md:border-r-2 md:border-foreground md:bg-sidebar">
       <div className="flex h-16 items-center px-6">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[3px] border-2 border-foreground bg-primary text-sm font-black text-primary-foreground shadow-brutal-sm">
-            FA
-          </div>
-          <p className="text-sm leading-none font-black tracking-tight uppercase">
-            FaceVec Attend
-          </p>
-        </div>
+        <p className="rounded-[3px] border-2 border-foreground bg-primary px-3 py-2 text-sm leading-none font-black tracking-tight uppercase text-primary-foreground shadow-brutal-sm">
+          FaceVec Attend
+        </p>
       </div>
       <nav className="flex flex-1 flex-col gap-2 px-3 py-4">
         {navItems.map((item) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { isAxiosError } from "axios";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CameraOff, CheckCircle2, Loader2, UserPlus } from "lucide-react";
@@ -13,6 +14,7 @@ import {
   useEnrollmentCamera,
 } from "@/components/kiosk/use-enrollment";
 import { useFaceTracker } from "@/components/kiosk/use-face-tracker";
+import { Button } from "@/components/ui/button";
 import { createEmployee } from "@/lib/api";
 
 const SUCCESS_REDIRECT_MS = 3000;
@@ -22,21 +24,24 @@ function MissingEmployeeInfo() {
   const router = useRouter();
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-zinc-950 text-white">
+    <main className="dark relative min-h-[100dvh] overflow-hidden bg-background text-foreground">
       <Overlay>
-        <UserPlus className="h-20 w-20 text-amber-400" aria-hidden />
-        <div className="max-w-md">
-          <p className="text-3xl font-semibold">Thiếu thông tin nhân viên</p>
-          <p className="mt-3 text-base text-zinc-400">
+        <UserPlus className="h-20 w-20 text-poster-yellow" aria-hidden />
+        <div>
+          <p className="font-heading text-3xl font-black uppercase tracking-tight">
+            Thiếu thông tin nhân viên
+          </p>
+          <p className="mt-3 text-base text-muted-foreground">
             Vui lòng quay lại trang Employees và nhập tên + mã nhân viên.
           </p>
-          <button
+          <Button
             type="button"
+            size="lg"
+            className="mt-6"
             onClick={() => router.push("/employees")}
-            className="mt-6 rounded-[3px] border-2 border-white px-6 py-2 text-base font-bold uppercase"
           >
             Quay lại Employees
-          </button>
+          </Button>
         </div>
       </Overlay>
     </main>
@@ -84,16 +89,26 @@ function EnrollmentCapture({
     return () => window.clearTimeout(timeout);
   }, [isSuccess, queryClient, router]);
 
+  // Duplicate emp_code (409) won't succeed on retry — go back to the form
+  // instead of looping capture → 409 forever. Other errors (bad frame, 5xx)
+  // may pass on a fresh capture, so keep retrying those.
+  const errorStatus = isAxiosError(error) ? error.response?.status : undefined;
+  const retryable = errorStatus !== 409;
+
   React.useEffect(() => {
     if (!isError) return;
     const timeout = window.setTimeout(() => {
+      if (!retryable) {
+        router.push("/employees");
+        return;
+      }
       submittedRef.current = false;
       setCapturing(false);
       setCountdown(null);
       reset();
     }, ERROR_RESET_MS);
     return () => window.clearTimeout(timeout);
-  }, [isError, reset]);
+  }, [isError, reset, retryable, router]);
 
   const idle =
     cameraPhase === "ready" &&
@@ -168,10 +183,13 @@ function EnrollmentCapture({
     };
   }, [countdown, empCode, mutate, name, proximity]);
 
+  const detail = isAxiosError(error) ? error.response?.data?.detail : undefined;
   const errorMessage =
-    error instanceof Error && error.message
-      ? error.message
-      : "Không thể đăng ký nhân viên.";
+    typeof detail === "string" && detail
+      ? detail
+      : error instanceof Error && error.message
+        ? error.message
+        : "Không thể đăng ký nhân viên.";
 
   const statusText = (() => {
     if (isPending) return "Đang đăng ký…";
@@ -185,15 +203,15 @@ function EnrollmentCapture({
   })();
 
   const barClass = isError
-    ? "bg-red-700 text-white"
+    ? "bg-destructive text-white"
     : capturing || (proximity === "ok" && countdown !== null && countdown > 0)
-      ? "bg-emerald-700 text-white"
+      ? "bg-poster-lime text-ink"
       : proximity === "far"
-        ? "bg-amber-600 text-white"
-        : "bg-zinc-900 text-zinc-400";
+        ? "bg-poster-yellow text-ink"
+        : "bg-card text-muted-foreground";
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-zinc-950 text-white">
+    <main className="dark relative min-h-[100dvh] overflow-hidden bg-background text-foreground">
       <video
         ref={videoRef}
         autoPlay
@@ -206,17 +224,17 @@ function EnrollmentCapture({
         <Brackets />
       </div>
 
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b-2 border-zinc-800 bg-zinc-950 px-8 py-4">
-        <p className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+      <header className="absolute inset-x-4 top-4 z-20 flex items-center justify-between gap-4 rounded-lg border-2 border-foreground bg-background px-6 py-3 shadow-brutal">
+        <p className="rounded-[3px] border-2 border-foreground bg-poster-cyan px-3 py-1 font-heading text-2xl font-black uppercase tracking-tight text-ink shadow-brutal-sm sm:text-3xl">
           Đăng ký
         </p>
-        <p className="text-right text-sm font-medium uppercase tracking-wide text-zinc-400 sm:text-base">
+        <p className="text-right text-sm font-medium uppercase tracking-wide text-muted-foreground sm:text-base">
           {name} · {empCode}
         </p>
       </header>
 
       <div
-        className={`absolute inset-x-0 bottom-0 z-20 flex min-h-20 items-center justify-center gap-4 border-t-2 border-zinc-800 px-8 py-4 text-center text-xl font-black uppercase tracking-tight sm:text-3xl ${barClass}`}
+        className={`absolute bottom-4 left-1/2 z-20 flex min-h-20 max-w-[calc(100%-2rem)] w-max -translate-x-1/2 items-center justify-center gap-4 rounded-lg border-2 border-foreground px-8 py-4 text-center font-heading text-xl font-black uppercase tracking-tight shadow-brutal sm:text-3xl ${barClass}`}
         aria-live="polite"
       >
         <span>{statusText}</span>
@@ -224,10 +242,12 @@ function EnrollmentCapture({
 
       {cameraPhase === "error" && (
         <Overlay>
-          <CameraOff className="h-20 w-20 text-amber-400" aria-hidden />
-          <div className="max-w-md">
-            <p className="text-3xl font-semibold">Không truy cập được camera</p>
-            <p className="mt-3 text-base text-zinc-400">
+          <CameraOff className="h-20 w-20 text-poster-yellow" aria-hidden />
+          <div>
+            <p className="font-heading text-3xl font-black uppercase tracking-tight">
+              Không truy cập được camera
+            </p>
+            <p className="mt-3 text-base text-muted-foreground">
               Vui lòng cấp quyền camera cho trình duyệt và tải lại trang.
             </p>
           </div>
@@ -237,10 +257,10 @@ function EnrollmentCapture({
       {cameraPhase === "initializing" && (
         <Overlay>
           <Loader2
-            className="h-16 w-16 animate-spin text-emerald-400 motion-reduce:animate-none"
+            className="h-16 w-16 animate-spin text-poster-lime motion-reduce:animate-none"
             aria-hidden
           />
-          <p className="text-2xl font-medium text-zinc-200">
+          <p className="font-heading text-2xl font-black uppercase tracking-tight text-foreground">
             Đang khởi động camera…
           </p>
         </Overlay>
@@ -248,9 +268,11 @@ function EnrollmentCapture({
 
       {isSuccess && (
         <Overlay>
-          <CheckCircle2 className="h-20 w-20 text-green-400" aria-hidden />
-          <p className="text-3xl font-semibold">Đăng ký thành công</p>
-          <p className="text-base text-zinc-400">
+          <CheckCircle2 className="h-20 w-20 text-poster-lime" aria-hidden />
+          <p className="font-heading text-3xl font-black uppercase tracking-tight">
+            Đăng ký thành công
+          </p>
+          <p className="text-base text-muted-foreground">
             Đang quay lại danh sách nhân viên…
           </p>
         </Overlay>
