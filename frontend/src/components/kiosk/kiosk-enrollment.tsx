@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { isAxiosError } from "axios";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CameraOff, CheckCircle2, Loader2, UserPlus } from "lucide-react";
@@ -88,16 +89,26 @@ function EnrollmentCapture({
     return () => window.clearTimeout(timeout);
   }, [isSuccess, queryClient, router]);
 
+  // Duplicate emp_code (409) won't succeed on retry — go back to the form
+  // instead of looping capture → 409 forever. Other errors (bad frame, 5xx)
+  // may pass on a fresh capture, so keep retrying those.
+  const errorStatus = isAxiosError(error) ? error.response?.status : undefined;
+  const retryable = errorStatus !== 409;
+
   React.useEffect(() => {
     if (!isError) return;
     const timeout = window.setTimeout(() => {
+      if (!retryable) {
+        router.push("/employees");
+        return;
+      }
       submittedRef.current = false;
       setCapturing(false);
       setCountdown(null);
       reset();
     }, ERROR_RESET_MS);
     return () => window.clearTimeout(timeout);
-  }, [isError, reset]);
+  }, [isError, reset, retryable, router]);
 
   const idle =
     cameraPhase === "ready" &&
@@ -172,10 +183,13 @@ function EnrollmentCapture({
     };
   }, [countdown, empCode, mutate, name, proximity]);
 
+  const detail = isAxiosError(error) ? error.response?.data?.detail : undefined;
   const errorMessage =
-    error instanceof Error && error.message
-      ? error.message
-      : "Không thể đăng ký nhân viên.";
+    typeof detail === "string" && detail
+      ? detail
+      : error instanceof Error && error.message
+        ? error.message
+        : "Không thể đăng ký nhân viên.";
 
   const statusText = (() => {
     if (isPending) return "Đang đăng ký…";

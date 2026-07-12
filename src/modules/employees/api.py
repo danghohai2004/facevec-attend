@@ -60,7 +60,7 @@ async def api_register(
     employee, err = await register_employee(db, qdrant, name, emp_code, embeddings)
     if err:
         if err == ERR_DUPLICATE:
-            raise HTTPException(409, "Employee code already exists.")
+            raise HTTPException(409, "Mã nhân viên đã tồn tại.")
         raise HTTPException(500, err)
     return EmployeeRegisterResponse(
         message=f"Registered {employee.name} ({employee.emp_code})",
