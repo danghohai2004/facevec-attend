@@ -39,7 +39,7 @@ Tất cả đường dẫn REST dưới đây có prefix `/api`. “Bảo vệ w
 
 | Method | Đường dẫn | Input chính | Kết quả chính | Xác thực hiện tại | BFF expose |
 |---|---|---|---|---|---|
-| `POST` | `/api/employees` | Multipart `name`, `emp_code`, `files[]`; tối đa 5 MiB/file | Nhân viên vừa tạo | Bảo vệ write | Có: `POST /api/write/employees` |
+| `POST` | `/api/employees` | Multipart `name`, `emp_code` và nhiều part cùng tên field `files`; tối đa 5 MiB/file | Nhân viên vừa tạo | Bảo vệ write | Có: `POST /api/write/employees` |
 | `GET` | `/api/employees` | `page`, `page_size` 1..100 | Danh sách phân trang | Công khai | Không cần |
 | `GET` | `/api/employees/{identifier}` | ID số hoặc chuỗi tên | Chi tiết hoặc kết quả tìm tên | Công khai | Không cần |
 | `DELETE` | `/api/employees` | `emp_id` hoặc `emp_code` | Nhân viên đã xóa | Bảo vệ write | Có: `DELETE /api/write/employees` |
@@ -78,7 +78,7 @@ Mức nhạy cảm trong bảng là đánh giá vận hành: **cao** cần secre
 | `ANTISPOOFING_THRESHOLD` | MiniFASNet checker | Thấp | `0.5` | Khác `THRESHOLD=0.6` trong nhận diện Qdrant. |
 | `PIPER_VOICE_PATH` | Piper TTS service | Thấp | Model Việt trong `models/piper/` | Đường dẫn artifact cục bộ, không phải API credential. |
 | `NEXT_PUBLIC_API_BASE_URL` | Axios và kiosk browser | Thấp | `http://localhost:8000` | Có mặt trong bundle browser theo chủ đích. |
-| `BACKEND_INTERNAL_URL` | Next.js BFF | Trung bình | Không có; BFF trả 503 nếu thiếu/sai | Chỉ server-side; phải là URL HTTP(S). |
+| `BACKEND_INTERNAL_URL` | Next.js BFF | Trung bình | Không có; thiếu, URL sai cú pháp hoặc protocol ngoài HTTP(S) trả 503 | Chỉ server-side; URL HTTP(S) hợp lệ nhưng backend không truy cập được trả 502. |
 
 Không đặt prefix `NEXT_PUBLIC_` cho `API_KEY`, `DB_PASS` hoặc `QDRANT_API_KEY`. File `.env` thực và credential không thuộc nội dung báo cáo hoặc version control.
 
