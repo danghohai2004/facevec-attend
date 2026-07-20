@@ -38,7 +38,8 @@
 | Chưa có healthcheck/readiness orchestration | Service có thể được route traffic trước khi dependency sẵn sàng | Thêm startup/readiness probes kiểm tra dependency theo semantics rõ ràng. |
 | Test chưa dùng browser/service thật | Có thể bỏ sót lỗi camera, CORS, proxy, DB/Qdrant và deploy | Thêm container integration, browser E2E và smoke test deployment. |
 | WebSocket thiếu schema runtime/correlation ID | Response latency chỉ ghép xấp xỉ; payload sai có thể đi vào reducer | Thêm sequence/frame ID và runtime schema ở cả hai biên. |
-| Dữ liệu sinh trắc thiếu governance được mô tả | Rủi ro quyền riêng tư dù ảnh không lưu bền | Định nghĩa consent, mục đích, retention, deletion, encryption/access review cho embedding và audit. |
+| Buffer multipart có thể dùng đĩa tạm runtime | Ảnh nguồn không được ứng dụng chủ ý persist vào PostgreSQL/Qdrant nhưng có thể tồn tại tạm trên đĩa; giới hạn từng file không chặn request nhiều file hoặc lấp temp volume | Giới hạn tổng body/request, số file và từng file; khóa quyền/vị trí/dung lượng temp directory; bảo đảm cleanup, mã hóa đĩa khi phù hợp và kiểm tra retention trong môi trường triển khai. |
+| Dữ liệu sinh trắc thiếu governance được mô tả | Rủi ro quyền riêng tư đối với embedding lưu bền và ảnh nguồn có thể đi qua đĩa tạm runtime | Định nghĩa consent, mục đích, retention, deletion, encryption/access review cho embedding, dữ liệu tạm và audit. |
 
 ## 8.4. Ưu tiên phát triển đề xuất
 
@@ -56,7 +57,7 @@ Thứ tự dưới đây cố ý củng cố khả năng đo, kiểm soát truy 
 
 ### 8.4.1. Giai đoạn 1 — Đo được hệ thống
 
-Trước hết cần đưa `scripts/load_test.py` hoặc một harness thay thế vào Git sau review. Ở mốc khảo sát, file này chỉ có trong working copy gốc và chưa được Git track trên nhánh, nên không có kết quả nào từ nó được coi là bằng chứng. Harness cần phát workload riêng cho `no_face`, unknown, recognized + DB write và liveness; gắn sequence ID để đo chính xác; ghi hardware, model/provider, số camera, FPS, frame size, duration, warm-up và version commit.
+Trước hết cần phiên bản hóa một harness tái lập được, nhưng kế hoạch đo không phụ thuộc tên hay implementation của công cụ. Harness phải phát workload riêng cho `no_face`, unknown, recognized + DB write và liveness; gắn sequence ID để đo chính xác; sweep số camera/FPS; ghi hardware, model/provider, frame size, duration, warm-up, số lần lặp và version commit; lưu raw result để tính response rate, throughput, p50/p95/p99, error/status breakdown và CPU/GPU/RAM. `scripts/load_test.py` chưa được Git track trong working copy gốc chỉ là một ví dụ không có thẩm quyền, không phải điều kiện để hiểu hoặc tái tạo phép đo và không phải bằng chứng benchmark.
 
 Song song, instrument từng stage: thời gian chờ queue, số drop-oldest, decode/detection/liveness/embedding, Qdrant query, attendance transaction và WebSocket send. Từ đó mới xác định bottleneck nằm ở CPU/GPU, store hay protocol, thay vì suy đoán từ `Semaphore(4)`.
 

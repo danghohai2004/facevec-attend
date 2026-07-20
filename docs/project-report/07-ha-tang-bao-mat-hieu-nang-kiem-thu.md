@@ -116,6 +116,8 @@ Các endpoint GET đọc nhân viên, chấm công, báo cáo và shift; endpoin
 
 Chưa có rate limit, quota theo client/IP, TLS termination, reverse-proxy hardening hay chính sách rotate secret trong source/config khảo sát. BFF giảm rủi ro lộ key và CSRF cho allowlist write, nhưng không biến dashboard thành hệ thống nhiều người dùng an toàn. Production cần TLS cho browser–frontend/API, bảo vệ WebSocket bằng `wss`, và TLS hoặc private network phù hợp cho traffic nội bộ.
 
+Enrollment còn có một biên tài nguyên cần tính riêng: code ứng dụng không chủ ý persist ảnh nguồn vào PostgreSQL hoặc Qdrant, nhưng FastAPI/Starlette `UploadFile` buffer multipart bằng tệp tạm dạng spooled và upload lớn có thể tràn sang đĩa tạm của runtime trước hoặc trong lúc code đọc nội dung. Vì vậy giới hạn 5 MiB cho từng file không tự giới hạn tổng request hay số part. Biên production cần giới hạn đồng thời kích thước từng file, tổng body/request và số file; kiểm soát quyền truy cập, vị trí và dung lượng temp directory; bảo đảm cleanup khi thành công, lỗi hoặc process bị gián đoạn; dùng mã hóa đĩa khi threat model yêu cầu; và kiểm tra hành vi retention thực tế trong container/host/orchestrator triển khai. Báo cáo không khẳng định ngưỡng chuyển từ RAM sang đĩa vì chưa xác minh ngưỡng đó từ source dependency đã khóa.
+
 ## 7.5. Đánh giá hiệu năng có bằng chứng
 
 ### 7.5.1. Điều có thể kết luận từ thiết kế
@@ -128,18 +130,21 @@ Chưa có rate limit, quota theo client/IP, TLS termination, reverse-proxy harde
 
 Các điểm này mô tả cơ chế, không chứng minh throughput, latency hay hiệu quả GPU. Không có kết quả profile/benchmark được Git track trong nhánh khảo sát.
 
-### 7.5.2. Công cụ load test và chỉ số cần đo
+### 7.5.2. Kế hoạch đo tải và chỉ số cần thu
 
-Tại thời điểm khảo sát, `scripts/load_test.py` **chỉ có trong working copy gốc và chưa được Git track trên nhánh này**. Vì vậy đây chỉ là công cụ đang có để tham khảo/đo thử, không phải artifact phiên bản hóa và không phải bằng chứng rằng load test đã được chạy hoặc đạt mục tiêu nào.
+Kế hoạch đo không phụ thuộc một công cụ cụ thể. Trước mỗi lần chạy cần ghi commit, hardware, OS/container topology, model/provider, cấu hình backend/datastore, dataset có quyền sử dụng, kích thước frame, số camera mô phỏng, FPS và thời lượng. Chạy warm-up riêng, sau đó sweep tải theo các mức camera/FPS đã định nghĩa, lặp lại mỗi mức nhiều lần và giữ toàn bộ raw result cùng cấu hình để tái lập.
 
-Công cụ mô phỏng nhiều WebSocket camera, gửi JPEG theo số camera/FPS/thời lượng cấu hình và ghép response với frame pending cũ nhất để ước lượng latency. Nó có thể báo:
+Workload phải tách ít nhất các đường `no_face`, `unknown`, `recognized` có Qdrant hit và ghi attendance, cùng các mẫu liveness real/spoof phù hợp; dữ liệu noise hoặc JPEG tối giản không được dùng để đại diện toàn bộ pipeline. Mỗi frame cần sequence/correlation ID ở protocol hoặc harness phải công bố rõ phép ghép xấp xỉ. Với từng workload và mức tải, thu:
 
-- số frame gửi/response nhận và **response rate**;
-- latency min/mean/median (**p50**), **p95**, **p99**, max;
-- lỗi và phân bố status, throughput tổng; theo từng camera có số sent/received/error cùng latency p50/p95;
-- CPU trung bình/đỉnh và RAM RSS trung bình/đỉnh nếu truyền PID server và cài `psutil`.
+- số frame gửi, response nhận, timeout/error và **response rate**;
+- throughput, phân bố status và latency end-to-end min/mean/**p50**/**p95**/**p99**/max;
+- latency theo stage, thời gian chờ queue, queue depth và số drop-oldest khi instrumentation cho phép;
+- CPU/GPU, RAM và dung lượng/IO đĩa tạm; tải và latency của PostgreSQL/Qdrant;
+- kết quả theo từng camera/client để phát hiện bất công bằng hoặc starvation.
 
-Phép ghép response với frame cũ nhất chỉ là xấp xỉ vì protocol không có sequence/correlation ID. Frame noise hoặc JPEG 1×1 fallback chủ yếu đo đường `no_face`, không đại diện đầy đủ cho inference khuôn mặt thật, liveness, Qdrant hit và ghi attendance. Muốn dùng kết quả để ra quyết định cần version hóa script, cố định hardware/model/dataset/config, warm-up, lặp lại nhiều lần, lưu raw result và so sánh response rate, p50/p95/p99, CPU, RAM cùng error/status breakdown. Không nên dùng verdict hard-coded trong script để tuyên bố production capacity.
+Acceptance criteria phải được định nghĩa trước theo SLO mục tiêu; không dùng verdict hard-coded của harness để suy ra production capacity. Báo cáo kết quả cần nêu warm-up, số lần lặp, sai khác giữa các lần chạy, failure/error breakdown và giới hạn của dataset/protocol.
+
+Tại mốc khảo sát, `scripts/load_test.py` chỉ xuất hiện như một file chưa được Git track trong working copy gốc. Nó có thể là ví dụ tham khảo cho WebSocket harness, nhưng không phải nguồn có thẩm quyền, không bắt buộc để hiểu hoặc tái tạo kế hoạch trên, và không cung cấp bằng chứng rằng benchmark đã được chạy hay đạt mục tiêu nào.
 
 ## 7.6. Chiến lược kiểm thử hiện tại
 

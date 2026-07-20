@@ -26,7 +26,7 @@ Provider list thể hiện thứ tự ưu tiên cấu hình: ONNX Runtime/Insigh
 
 ### Enrollment
 
-Với mỗi JPEG upload, OpenCV decode bytes thành ảnh BGR và `FaceAnalysis.get()` trả toàn bộ mặt. API chỉ nhận embedding của frame có đúng một mặt; một employee có thể có nhiều Qdrant point từ burst multi-frame. Ảnh đầu vào và crop không được ghi bền vững bởi flow này.
+Với mỗi JPEG upload, OpenCV decode bytes thành ảnh BGR và `FaceAnalysis.get()` trả toàn bộ mặt. API chỉ nhận embedding của frame có đúng một mặt; một employee có thể có nhiều Qdrant point từ burst multi-frame. Flow ứng dụng không ghi bền ảnh đầu vào hoặc crop vào PostgreSQL/Qdrant; riêng buffering multipart của `UploadFile` có thể dùng tệp tạm spooled trên đĩa runtime trong khi request được xử lý, như phân tích vận hành ở Chương 7. Artifact sinh trắc được ứng dụng chủ ý lưu bền sau flow là embedding trong Qdrant.
 
 ### Recognition realtime
 

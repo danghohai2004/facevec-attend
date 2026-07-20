@@ -9,7 +9,7 @@ Chấm công là quá trình xác nhận một nhân viên có mặt và ghi nh�
 - thiết bị vân tay tạo điểm tiếp xúc chung, có thể chậm khi đông người và phụ thuộc chất lượng cảm biến/ngón tay;
 - đối chiếu ảnh hoặc đào tạo một classifier riêng cho từng người làm tăng chi phí cập nhật khi số nhân viên thay đổi.
 
-FaceVec Attend giải quyết bài toán bằng nhận diện khuôn mặt dựa trên **embedding**. Ảnh được xử lý thành vector đặc trưng 512 chiều đã chuẩn hóa; Qdrant tìm vector gần nhất theo cosine, còn PostgreSQL quản lý dữ liệu quan hệ. Khi thêm nhân viên mới, hệ thống thêm các embedding từ nhiều frame hợp lệ thay vì huấn luyện lại mô hình phân loại cho toàn bộ tập người dùng. Ảnh khuôn mặt chỉ tồn tại tạm thời trong bộ nhớ trong lúc xử lý, không được lưu bền vững bởi luồng đăng ký hiện tại.
+FaceVec Attend giải quyết bài toán bằng nhận diện khuôn mặt dựa trên **embedding**. Ảnh được xử lý thành vector đặc trưng 512 chiều đã chuẩn hóa; Qdrant tìm vector gần nhất theo cosine, còn PostgreSQL quản lý dữ liệu quan hệ. Khi thêm nhân viên mới, hệ thống thêm các embedding từ nhiều frame hợp lệ thay vì huấn luyện lại mô hình phân loại cho toàn bộ tập người dùng. Code ứng dụng không chủ ý ghi bền ảnh nguồn vào PostgreSQL hoặc Qdrant; tuy nhiên, multipart `UploadFile` của FastAPI/Starlette dùng tệp tạm dạng spooled và có thể chuyển dữ liệu upload lớn sang đĩa tạm của runtime trong lúc xử lý. Sau xử lý, artifact sinh trắc mà ứng dụng chủ ý lưu bền là embedding trong Qdrant.
 
 ## 1.2. Mục tiêu
 
@@ -99,7 +99,7 @@ Microservice, message broker, worker nhận diện độc lập, API gateway, au
 | NFR-02 — Khả năng mở rộng dữ liệu | Không huấn luyện lại classifier khi thêm người | Enrollment upsert embedding mới; Qdrant thực hiện vector search cosine |
 | NFR-03 — Tính nhất quán | Giữ quan hệ nhân viên/chấm công hợp lệ | PostgreSQL dùng khóa ngoại và transaction; đồng bộ PostgreSQL–Qdrant vẫn có failure window |
 | NFR-04 — Bảo mật secret | Không để API key ghi xuất hiện ở browser | BFF server-side gắn `X-API-Key`; backend fail-closed nếu thiếu cấu hình key |
-| NFR-05 — Riêng tư | Hạn chế dữ liệu sinh trắc không cần thiết | Ảnh không được lưu bền vững; embedding được lưu trong Qdrant; vẫn cần chính sách vòng đời/đồng thuận khi triển khai thực tế |
+| NFR-05 — Riêng tư | Hạn chế dữ liệu sinh trắc không cần thiết | Ứng dụng không chủ ý persist ảnh nguồn vào PostgreSQL/Qdrant và chỉ lưu bền embedding trong Qdrant; multipart buffering vẫn có thể dùng đĩa tạm runtime, nên cần kiểm soát cả vòng đời dữ liệu tạm lẫn embedding |
 | NFR-06 — Khả dụng | Client kiosk tự phục hồi khi socket mất | Kiosk tự kết nối lại; chưa có SLA, HA hoặc health orchestration đầy đủ |
 | NFR-07 — Bảo trì | Tách nghiệp vụ theo domain và hạ tầng dùng chung | Backend modular monolith với năm domain và `platform`; hợp đồng nội bộ vẫn là lời gọi Python trực tiếp |
 | NFR-08 — Khả chuyển | Chạy được trên stack phổ biến và có fallback CPU | InsightFace cấu hình CUDA rồi CPU; PostgreSQL/Qdrant chạy bằng Compose |
