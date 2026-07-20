@@ -21,6 +21,7 @@ flowchart LR
     KioskBrowser --> Kiosk
     Dashboard -->|đọc REST trực tiếp| API[FastAPI modular monolith]
     Dashboard -->|ghi cùng origin| BFF
+    Kiosk -->|enrollment write cùng origin| BFF
     BFF -->|REST + X-API-Key| API
     Kiosk -->|WebSocket frame / JSON result| API
     Kiosk -->|REST shift settings + TTS| API
@@ -66,7 +67,7 @@ flowchart TB
     App[src/app.py\ncomposition root + lifespan]
 
     subgraph Domains[Năm domain module]
-        Employees[employees\nCRUD + enrollment]
+        Employees[employees\nregister/list/search/detail/delete + enrollment]
         Attendance[attendance\nshift + logs + analytics]
         Recognition[recognition\nWS ingress + pipeline + identify]
         Antispoofing[antispoofing\nliveness interface/implementation]
@@ -103,7 +104,6 @@ flowchart TB
     Recognition --> DB
     Recognition --> Antispoofing
     Recognition --> Attendance
-    TTS -->|dịch vụ độc lập trong cùng process| App
     ML --> Config
 ```
 
