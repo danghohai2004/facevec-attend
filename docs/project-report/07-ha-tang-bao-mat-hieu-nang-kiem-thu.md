@@ -74,9 +74,9 @@ Các hằng số 50 và 4 là giới hạn triển khai, không phải capacity 
 
 ### 7.3.3. Graceful shutdown theo nghĩa hiện hành
 
-FastAPI giữ reference đến background pipeline trong `app.state.pipeline_task`. Khi shutdown, lifespan cancel và await pipeline; `run_pipeline()` sau đó cancel toàn bộ child task còn in-flight và `gather(..., return_exceptions=True)`. Chỉ sau khi pipeline đã kết thúc, app đóng Qdrant client và dispose SQLAlchemy engine.
+FastAPI giữ reference đến background pipeline trong `app.state.pipeline_task`. Khi shutdown, lifespan cancel và await pipeline; `run_pipeline()` sau đó cancel toàn bộ child task còn in-flight và `gather(..., return_exceptions=True)`. Chỉ sau khi pipeline task đã kết thúc, app đóng Qdrant client và dispose SQLAlchemy engine.
 
-Đây là shutdown có thứ tự và thu hồi task/resource, nhưng **không phải graceful drain để hoàn tất mọi frame**: child task bị cancel, queue trong RAM không được xử lý hết hay lưu lại, và CPU function đã được giao cho thread executor không có cam kết dừng ngay lập tức. Cách diễn đạt chính xác là “cancel và await việc kết thúc các task”, không phải “bảo đảm chấm công in-flight được commit”.
+Đây là shutdown có thứ tự cho pipeline task, Qdrant client và SQLAlchemy engine, nhưng **không phải graceful drain để hoàn tất mọi frame**: child task bị cancel, queue trong RAM không được xử lý hết hay lưu lại. `ThreadPoolExecutor` là biến module-global và FastAPI lifespan không gọi `shutdown()` cho executor này; CPU function đã submit có thể tiếp tục chạy dù `asyncio` task đang await nó đã bị cancel. Cách diễn đạt chính xác là “cancel và await việc kết thúc các asyncio task trước khi đóng datastore client”, không phải “thu hồi toàn bộ execution resource” hay “bảo đảm chấm công in-flight được commit”.
 
 ## 7.4. Threat model và ranh giới tin cậy
 
@@ -92,7 +92,7 @@ flowchart LR
     Evil[Cross-site origin] -.->|bị chặn khi Origin khác Host| BFF
 ```
 
-Browser là vùng không tin cậy: người dùng có thể sửa request, query, multipart và WebSocket payload. BFF là ranh giới server-side giữ shared secret; FastAPI vẫn phải tự xác thực write thay vì tin BFF tuyệt đối. PostgreSQL và Qdrant là tài sản chứa dữ liệu nghiệp vụ/sinh trắc; embedding không phải secret đăng nhập nhưng vẫn là dữ liệu nhạy cảm cần kiểm soát vòng đời và quyền truy cập.
+Browser là vùng không tin cậy: người dùng có thể sửa request, query, multipart và WebSocket payload. BFF là ranh giới server-side giữ shared secret; FastAPI vẫn phải tự xác thực write thay vì tin BFF tuyệt đối. Tuy nhiên, BFF không xác thực user/session hay gắn identity: caller nào truy cập được một route allowlist đều được proxy gắn shared API key khi gọi backend. PostgreSQL và Qdrant là tài sản chứa dữ liệu nghiệp vụ/sinh trắc; embedding không phải secret đăng nhập nhưng vẫn là dữ liệu nhạy cảm cần kiểm soát vòng đời và quyền truy cập.
 
 ### 7.4.2. Kiểm soát đã có
 
@@ -100,8 +100,8 @@ Browser là vùng không tin cậy: người dùng có thể sửa request, quer
 |---|---|---|
 | API key fail-closed | Thiếu/rỗng `API_KEY` làm endpoint được bảo vệ trả 503; thiếu/sai header trả 401. | Shared key xác thực caller kỹ thuật, không định danh người dùng. |
 | So sánh constant-time | `hmac.compare_digest()` so sánh byte của key. | Không thay thế rotation, scope hay revocation theo người dùng. |
-| BFF allowlist | Chỉ forward đúng tổ hợp method/path cho create/delete employee và update shift. | Manual attendance write có ở backend nhưng chưa được BFF expose. |
-| CSRF same-origin | Với request có `Origin`, BFF parse URL và yêu cầu `Origin.host === Host`; khác origin trả 403. | Request không có `Origin` không bị chặn bởi nhánh này; cần triển khai sau reverse proxy với Host forwarding đáng tin cậy. |
+| BFF allowlist | Chỉ forward đúng tổ hợp method/path cho create/delete employee và update shift. | Allowlist giới hạn operation, không xác thực người dùng: caller tới được route hợp lệ sẽ được BFF gắn API key. Manual attendance write có ở backend nhưng chưa được BFF expose. |
+| CSRF same-origin | Với request có `Origin`, BFF parse URL và yêu cầu `Origin.host === Host`; khác origin trả 403. | Nhánh này giảm browser CSRF, không chặn direct client. Request thiếu `Origin` được chấp nhận; cần user auth/authorization và cấu hình trusted Host/proxy riêng. |
 | Giữ secret server-side | BFF đọc `API_KEY` ở Node.js runtime và chỉ forward một số header cần thiết. | Lộ server env/log hoặc SSR compromise vẫn có thể làm mất key. |
 | CORS localhost | FastAPI chỉ cho origin khớp localhost/127.0.0.1, không credentials. | CORS là cơ chế browser, không chặn curl/server-to-server và chưa phải policy production. |
 | Qdrant API key | Compose yêu cầu key; client backend gửi key. | Kết nối local mặc định HTTP; cần TLS khi qua mạng không tin cậy. |
@@ -110,7 +110,7 @@ Browser là vùng không tin cậy: người dùng có thể sửa request, quer
 
 ### 7.4.3. Security debt hiện tại
 
-Hệ thống chưa có user login/session, identity provider, RBAC hoặc audit trail cho thao tác quản trị. Vì vậy shared API key không thể trả lời ai đã xóa nhân viên hay đổi ca, cũng không thể cấp quyền khác nhau theo vai trò.
+Hệ thống chưa có user login/session, identity provider, RBAC hoặc audit trail cho thao tác quản trị. Vì vậy shared API key không thể trả lời ai đã xóa nhân viên hay đổi ca, cũng không thể cấp quyền khác nhau theo vai trò. Same-origin `Origin`/`Host` check chỉ xử lý một lớp browser CSRF: direct client có thể bỏ `Origin`, và BFF sẽ inject API key cho request tới đúng allowlisted method/path.
 
 Các endpoint GET đọc nhân viên, chấm công, báo cáo và shift; endpoint TTS; cùng WebSocket recognition hiện public theo route dependency hiện hành. CORS localhost không phải lớp auth cho các endpoint đó. WebSocket cũng chưa giới hạn kích thước/tần suất ở application layer, trong khi mỗi frame có thể kích hoạt decode và inference.
 
@@ -136,7 +136,7 @@ Công cụ mô phỏng nhiều WebSocket camera, gửi JPEG theo số camera/FPS
 
 - số frame gửi/response nhận và **response rate**;
 - latency min/mean/median (**p50**), **p95**, **p99**, max;
-- lỗi và phân bố status, tổng/per-camera throughput;
+- lỗi và phân bố status, throughput tổng; theo từng camera có số sent/received/error cùng latency p50/p95;
 - CPU trung bình/đỉnh và RAM RSS trung bình/đỉnh nếu truyền PID server và cài `psutil`.
 
 Phép ghép response với frame cũ nhất chỉ là xấp xỉ vì protocol không có sequence/correlation ID. Frame noise hoặc JPEG 1×1 fallback chủ yếu đo đường `no_face`, không đại diện đầy đủ cho inference khuôn mặt thật, liveness, Qdrant hit và ghi attendance. Muốn dùng kết quả để ra quyết định cần version hóa script, cố định hardware/model/dataset/config, warm-up, lặp lại nhiều lần, lưu raw result và so sánh response rate, p50/p95/p99, CPU, RAM cùng error/status breakdown. Không nên dùng verdict hard-coded trong script để tuyên bố production capacity.
@@ -150,7 +150,7 @@ Phép ghép response với frame cũ nhất chỉ là xấp xỉ vì protocol kh
 | Unit/pure logic | `tests/platform/test_auth.py`, `test_queue.py`; `tests/modules/attendance/test_schemas.py`; `test_identifier.py`; `test_service.py` của antispoofing | Fail-closed/constant-time auth, drop-oldest, schema, ngưỡng nhận diện, crop/preprocess/liveness abstraction. |
 | Service | `tests/modules/attendance/test_service.py`, `employees/test_service.py`, `tts/test_service.py` | Cửa sổ ca và ngày nghiệp vụ, error masking, duplicate/race, thống kê, tạo WAV. Phụ thuộc ngoài chủ yếu được fake/mock. |
 | API | `tests/modules/*/test_api.py`, `tests/platform/test_auth.py` | Validation, status/error mapping, multipart, giới hạn upload, dependency API key, endpoint public/protected qua FastAPI `TestClient`. |
-| Integration-like trong process | `tests/test_app.py`, `attendance/test_report.py`, `platform/test_qdrant.py`, `scripts/test_reconcile_vectors.py`, `recognition/test_pipeline.py` | Lifespan/shutdown order, workbook hai sheet, cấu hình Qdrant client, đối chiếu drift, concurrency/cancellation pipeline. Đây không phải test với PostgreSQL/Qdrant/network production thật. |
+| Integration-like trong process | `tests/test_app.py`, `attendance/test_report.py`, `platform/test_qdrant.py`, `tests/scripts/test_reconcile_vectors.py`, `recognition/test_pipeline.py` | Lifespan/shutdown order, workbook hai sheet, cấu hình Qdrant client, đối chiếu drift, concurrency/cancellation pipeline. Đây không phải test với PostgreSQL/Qdrant/network production thật. |
 | Frontend pure logic/type contract | `frontend/src/lib/kiosk.test.ts`, `components/kiosk/use-enrollment.test.ts`, `lib/attendance-stats.type-test.ts` | Reducer/phase, URL, proximity, countdown/capture và hợp đồng type analytics. Hai file `.test.ts` là self-check Node; type-test được compiler kiểm tra. |
 
 Không thấy browser E2E, visual regression, benchmark được lưu kết quả, test với database/container thật, test TLS/reverse proxy hay test xác suất trên bộ dữ liệu khuôn mặt/liveness đại diện. Do đó test hiện tại hỗ trợ regression logic và hợp đồng trong process, chưa chứng minh chất lượng AI hoặc độ sẵn sàng production.

@@ -13,8 +13,8 @@
 | Enrollment không cần train lại classifier | Multi-frame tạo embedding 512 chiều và upsert Qdrant | Thêm nhân viên bằng dữ liệu mới mà không huấn luyện lại toàn bộ mô hình phân loại. |
 | Backpressure realtime | Queue 50, drop-oldest, `Semaphore(4)`, thread pool 4 | Giới hạn backlog/tác vụ trong process và ưu tiên frame mới. |
 | CPU work rời event loop | Decode/detection/embedding/liveness qua executor | Giảm nguy cơ inference blocking trực tiếp event loop REST/WebSocket. |
-| Lifecycle có thứ tự | Startup kiểm tra liveness/collection; shutdown cancel/await task rồi đóng Qdrant và SQL engine | Resource ownership tập trung và có test về thứ tự đóng. |
-| Write secret không ở browser | Same-origin BFF allowlist gắn `X-API-Key`; backend fail-closed và constant-time compare | Giảm bề mặt lộ shared secret trong client bundle. |
+| Lifecycle có thứ tự | Startup kiểm tra liveness/collection; shutdown cancel/await pipeline task rồi đóng Qdrant và SQL engine | Thứ tự đóng ba resource này tập trung và có test; module-global thread executor chưa thuộc lifecycle shutdown. |
+| Write secret không ở browser | BFF allowlist gắn `X-API-Key`; backend fail-closed và constant-time compare | Giảm bề mặt lộ shared secret trong client bundle; không cung cấp user auth/identity cho caller của BFF. |
 | Datastore chuyên biệt và persist | PostgreSQL cho quan hệ, Qdrant cho vector; Compose có named volume và Qdrant image pin | Trách nhiệm dữ liệu rõ, có persistence qua restart container. |
 | Guard liveness production | Production từ chối `PassThroughChecker` | Tránh vô tình chạy production với checker luôn trả true. |
 | Test regression đa tầng | Unit, service, API, integration-like và frontend pure logic/type checks | Có bằng chứng cho nhiều invariant quan trọng của auth, queue, nghiệp vụ, pipeline và UI logic. |
@@ -27,12 +27,13 @@
 | Chưa có benchmark tái lập | Không biết response rate, p50/p95/p99, CPU/RAM hay số camera chịu được trên hardware mục tiêu | Version hóa kịch bản, định nghĩa workload và chạy benchmark có raw result; không claim capacity trước đó. |
 | Observability mỏng | Khó phân biệt nghẽn inference, queue, Qdrant, DB hay client | Thêm structured log, correlation ID, queue depth/drop counter, latency stage histogram, error/status metrics và trace. |
 | Shared API key, không login/RBAC/audit | Không định danh actor, không phân quyền và không truy vết thao tác quản trị | Bổ sung identity/session, RBAC theo action/resource và append-only audit event. |
+| BFF allowlisted write không có user auth | Caller truy cập được đúng method/path sẽ được proxy inject API key; không biết caller là ai hay có quyền gì | Đặt authn/authz trước BFF operation và truyền principal đáng tin cậy vào audit/policy. |
 | GET, report, TTS và WebSocket public | Có thể đọc dữ liệu hoặc tiêu thụ tài nguyên ngoài ý muốn | Xác định policy từng endpoint, authenticate WebSocket/read, hạn chế payload và quota. |
 | Chưa có TLS/rate limit | Nguy cơ nghe lén/key exposure và abuse/DoS | Đặt reverse proxy/API gateway có TLS, `wss`, header policy, body limit và rate limit theo principal/IP. |
 | Liveness chưa có đánh giá định lượng | Production guard chỉ bảo đảm không dùng pass-through, không chứng minh chống spoof | Xây dataset/attack protocol và báo cáo APCER/BPCER hoặc metric phù hợp trên môi trường mục tiêu. |
 | Hai datastore không atomic | Enrollment/delete có thể tạo missing/orphan vector | Dùng outbox/saga có idempotency, job reconciliation định kỳ và runbook sửa drift. |
 | Queue/task state chỉ ở RAM | Restart làm mất frame; scale nhiều process không có phối hợp | Chấp nhận rõ semantics best-effort hiện tại; khi cần scale mới đưa job qua broker/worker. |
-| BFF CSRF check chỉ áp dụng khi có `Origin` | Không phải cơ chế session/CSRF hoàn chỉnh cho mọi client/proxy topology | Khi có cookie session, thêm CSRF token/SameSite policy và trusted-host/proxy configuration. |
+| BFF CSRF check chỉ áp dụng khi có `Origin` | Missing `Origin` được chấp nhận; direct client không bị browser same-origin policy ràng buộc | Xem đây là browser CSRF guard, không phải auth; khi có cookie session, thêm CSRF token/SameSite policy và trusted-host/proxy configuration. |
 | FastAPI entrypoint bật reload, bind mọi interface | Không phù hợp trực tiếp cho production | Tách cấu hình production với process manager, worker model được benchmark, reverse proxy và network policy. |
 | Chưa có healthcheck/readiness orchestration | Service có thể được route traffic trước khi dependency sẵn sàng | Thêm startup/readiness probes kiểm tra dependency theo semantics rõ ràng. |
 | Test chưa dùng browser/service thật | Có thể bỏ sót lỗi camera, CORS, proxy, DB/Qdrant và deploy | Thêm container integration, browser E2E và smoke test deployment. |
@@ -61,7 +62,7 @@ Song song, instrument từng stage: thời gian chờ queue, số drop-oldest, d
 
 ### 8.4.2. Giai đoạn 2 — Tạo biên tin cậy production
 
-Thêm identity cho người quản trị, policy RBAC và audit trail trước khi mở rộng BFF. Browser session nên dùng cookie an toàn, `SameSite` phù hợp và CSRF protection đầy đủ; service-to-service credential tách khỏi user identity. Reverse proxy/API gateway terminate TLS, nâng WebSocket thành `wss`, enforce trusted host, body/frame limit và rate limit. Endpoint read, report, TTS và recognition WebSocket cần policy explicit thay vì public theo mặc định.
+Thêm identity cho người quản trị, policy RBAC và audit trail trước khi mở rộng BFF. Hiện tại BFF inject shared key cho mọi caller tới được một allowlisted write; `Origin` khác `Host` chỉ bị chặn khi header `Origin` tồn tại, nên guard này xử lý browser CSRF chứ không xác thực direct client. Browser session nên dùng cookie an toàn, `SameSite` phù hợp và CSRF protection đầy đủ; service-to-service credential tách khỏi user identity. Reverse proxy/API gateway terminate TLS, nâng WebSocket thành `wss`, enforce trusted host, body/frame limit và rate limit. Endpoint read, report, TTS và recognition WebSocket cần policy explicit thay vì public theo mặc định.
 
 ### 8.4.3. Giai đoạn 3 — Chứng minh AI và nhất quán dữ liệu
 
