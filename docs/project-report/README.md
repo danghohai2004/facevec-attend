@@ -58,6 +58,10 @@ Mỗi nhận định về chức năng hoặc kiến trúc thuộc một trong b
 
 Bắt đầu từ chương 2, sau đó đọc chương 5 cho hợp đồng dữ liệu/API, chương 6 cho frontend, chương 3–4 cho luồng realtime và AI, rồi chương 7 cho triển khai và kiểm thử. Dùng chương 9 như bảng tra nhanh source, endpoint, biến môi trường và thuật ngữ.
 
+### Tra cứu và kiểm chứng
+
+[Phụ lục Chương 9](09-phu-luc-tra-cuu.md) tập hợp cây source chú giải, toàn bộ endpoint, ma trận biến môi trường, các hằng số quan trọng, glossary Việt–Anh và source map theo chủ đề. Khi một nhận định cần kiểm chứng, ưu tiên file source/config/test trong source map thay vì dựa vào giá trị được sao chép từ tài liệu cũ.
+
 ## Sử dụng sơ đồ Mermaid
 
 Các nền tảng hỗ trợ Mermaid như GitHub/GitLab có thể render trực tiếp các khối `mermaid` trong Markdown. Với Mermaid CLI, có thể cài `@mermaid-js/mermaid-cli`, chép từng khối vào file `.mmd`, rồi xuất SVG hoặc PNG, ví dụ:
