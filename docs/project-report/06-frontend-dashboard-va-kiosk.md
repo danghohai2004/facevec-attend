@@ -103,7 +103,7 @@ Trang Employees có hai data path:
 1. Khi ô tìm kiếm rỗng, list phân trang theo `page`/`page_size`.
 2. Khi có chuỗi, client gọi `/employees/{encodedName}` và chuyển sang page 1 cục bộ.
 
-Delete yêu cầu dialog xác nhận, gọi BFF rồi invalidate list/search. Form đăng ký không upload ngay: nó validate tên/mã, tạo deep-link `/kiosk?mode=register...`; kiosk xin camera, đợi mặt đủ gần, countdown ba giây, chụp burst mục tiêu năm frame cách nhau 400 ms và gửi mảng `files`. Thành công invalidate cache và quay lại `/employees` sau ba giây; lỗi 409 quay về form thay vì retry capture vô hạn.
+Delete yêu cầu dialog xác nhận, gọi BFF rồi invalidate list/search. Form đăng ký không upload ngay: nó validate tên/mã, tạo deep-link `/kiosk?mode=register...`; kiosk xin camera, đợi mặt đủ gần, countdown ba giây, chụp burst mục tiêu năm frame cách nhau 400 ms và gửi mảng `files`. Thành công invalidate cache và quay lại `/employees` sau ba giây. Lỗi 409 cũng gọi `router.push('/employees')` sau ba giây để dừng vòng retry; vì tab `EmployeesClient` là uncontrolled và có `defaultValue="list"`, đích đến hiển thị danh sách nhân viên mặc định, không tự mở lại form đăng ký.
 
 Trang Shifts validate bốn giá trị time không rỗng. Backend mới là nơi quyết định khung giờ cho attendance; localStorage/context chỉ phục vụ trạng thái giao diện và khả năng hiển thị gần nhất.
 

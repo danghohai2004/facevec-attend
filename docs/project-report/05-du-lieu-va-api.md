@@ -50,7 +50,7 @@ erDiagram
 | Check constraint | `valid_attendance_time` chỉ chấp nhận `checkout_time IS NULL` hoặc `checkout_time > checkin_time`. |
 | Index thường | `(emp_id, working_date)` hỗ trợ truy vấn log của một nhân viên theo ngày. |
 | Partial unique index | `(emp_id, working_date) WHERE checkout_time IS NULL` ngăn nhiều log đang mở cho cùng nhân viên trong cùng ngày. Sau khi log cũ đã checkout, schema không cấm có thêm log đóng trong cùng ngày. |
-| `shift_settings` | Bốn mốc `TIME`; init SQL tạo một dòng mặc định `08:00–10:00` và `17:00–19:00`. Service chỉ đọc/cập nhật dòng có `id` nhỏ nhất, hoặc trả cùng bộ mặc định nếu bảng trống. |
+| `shift_settings` | Bốn mốc `TIME`; init SQL tạo một dòng mặc định `08:00–10:00` và `17:00–19:00`. `GET` đọc dòng có `id` nhỏ nhất và chỉ trả bộ mặc định in-memory nếu bảng trống. `PUT`/upsert cập nhật dòng đầu tiên; nếu bảng trống, nó insert chính payload do caller gửi, không tự insert bộ mặc định. |
 
 `TIMESTAMP` trong schema không kèm timezone. Service lấy thời gian nghiệp vụ theo `Asia/Ho_Chi_Minh`, sau đó bỏ `tzinfo` trước khi ghi. Các truy vấn check-in/check-out đều giới hạn vào `working_date` hiện tại, nên log mở của ngày trước không chặn hoặc bị đóng bởi ngày hôm sau.
 
@@ -101,7 +101,7 @@ Luồng đăng ký tạo employee, `flush` để lấy `emp_id`, dựng các poi
 2. tiến trình dừng, Qdrant lỗi hoặc upsert thất bại;
 3. employee tồn tại nhưng không có vector, nên không thể được recognition tìm thấy.
 
-API trả lỗi 500 đã làm mờ trong trường hợp upsert thất bại, nhưng rollback SQL sau commit không xóa được employee vừa tạo. Retry cùng `emp_code` sẽ gặp unique constraint/409, vì vậy đây không phải thao tác retry tự phục hồi hoàn toàn.
+API trả lỗi 500 đã làm mờ trong trường hợp upsert thất bại, nhưng rollback SQL sau commit không xóa được employee vừa tạo. Retry thông thường cùng `emp_code` được duplicate pre-check phát hiện và ánh xạ thành 409. `IntegrityError` từ unique constraint là fallback cho race giữa hai request cùng vượt qua pre-check, không phải đường retry thông thường. Vì vậy registration không phải thao tác retry tự phục hồi hoàn toàn.
 
 ### 5.4.2. Deletion
 
