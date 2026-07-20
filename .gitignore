@@ -39,3 +39,6 @@ inference/
 .superpowers/sdd/*.diff
 .superpowers/sdd/*-brief.md
 .superpowers/sdd/*-report.md
+
+# ==== Local worktrees ====
+.worktrees/
