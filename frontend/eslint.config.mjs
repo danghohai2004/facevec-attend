@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Self-hosted generated MediaPipe runtime assets.
     "public/mediapipe/**",
+    "public/zz-root.js",
   ]),
 ]);
 
